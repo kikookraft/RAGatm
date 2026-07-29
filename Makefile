@@ -10,9 +10,10 @@ ARG ?=
 run:
 	uv run python src/main.py $(ARG)
 
+# Create virtual environment if it doesn't exist
 install:
-	uv venv
-	uv pip install -e .
+	test -d $(UV_PROJECT_ENVIRONMENT) || uv venv $(UV_PROJECT_ENVIRONMENT)
+	VIRTUAL_ENV=$(UV_PROJECT_ENVIRONMENT) uv pip install -e .
 
 debug:
 	uv run python -m pdb main.py
