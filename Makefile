@@ -1,26 +1,47 @@
 .PHONY: install run debug clean lint lint-strict test
+.PHONY: index search search_dataset answer answer_dataset evaluate
 
-export UV_CACHE_DIR=/goinfre/$(USER)/RAG_cache
-export UV_PROJECT_ENVIRONMENT=/goinfre/$(USER)/RAG_venv
-export HF_HOME=/goinfre/$(USER)/hf_cache
+# uses /goinfre to save space
+export UV_CACHE_DIR     = /goinfre/$(USER)/RAG_cache
+export UV_PROJECT_ENVIRONMENT = /goinfre/$(USER)/RAG_venv
+export HF_HOME          = /goinfre/$(USER)/hf_cache
 unexport VIRTUAL_ENV
 
-ARG ?=
+# Arguments for run
+ARGS ?=
 
-run:
-	uv run python src/main.py $(ARG)
-
-# Create virtual environment if it doesn't exist
 install:
 	test -d $(UV_PROJECT_ENVIRONMENT) || uv venv $(UV_PROJECT_ENVIRONMENT)
 	VIRTUAL_ENV=$(UV_PROJECT_ENVIRONMENT) uv pip install -e .
 
+run:
+	uv run python -m src $(ARGS)
+
+# Aliases for each subcommand
+index:
+	$(MAKE) run ARGS="index $(ARGS)"
+
+search:
+	$(MAKE) run ARGS="search $(ARGS)"
+
+search_dataset:
+	$(MAKE) run ARGS="search_dataset $(ARGS)"
+
+answer:
+	$(MAKE) run ARGS="answer $(ARGS)"
+
+answer_dataset:
+	$(MAKE) run ARGS="answer_dataset $(ARGS)"
+
+evaluate:
+	$(MAKE) run ARGS="evaluate $(ARGS)"
+
+# Other targets
 debug:
-	uv run python -m pdb main.py
+	uv run python -m pdb src/main.py $(ARGS)
 
 clean:
-	rm -rf __pycache__
-	rm -rf .mypy_cache
+	rm -rf __pycache__ .mypy_cache
 
 lint:
 	uv run flake8 src --exclude .venv
