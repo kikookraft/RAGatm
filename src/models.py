@@ -39,7 +39,7 @@ class MinimalSource(StrictBaseModel):
         return cleaned_value
 
     @model_validator(mode='after')
-    def check_indices(self):
+    def check_indices(self) -> "MinimalSource":
         if self.first_character_index >= self.last_character_index:
             raise ValueError(
                 'last_character_index must be greater than '
