@@ -175,13 +175,7 @@ class PythonChunker(BaseChunker):
 
 class TextChunker(BaseChunker):
     """Chunk prose documents (`.md`, `.rst`, `.txt`) at structural
-    boundaries.
-
-    Priority order for split points (highest to lowest):
-    1. Paragraph break (double-newline ``\\n\\n``)
-    2. Sentence-ending punctuation (``. ! ?``)
-    3. Word boundary (space)
-    4. Hard cut at *max_chunk_size* (gibberish fallback — should be rare)
+    Split first by double newlines, then by punctuation, then by single spaces.
     """
 
     def chunk(self, file_path: str, data: str) -> List[MinimalSource]:
