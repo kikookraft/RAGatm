@@ -49,6 +49,23 @@ class MinimalSource(StrictBaseModel):
             raise ValueError('source span cannot exceed 2000 characters')
         return self
 
+    def get_string_representation(self) -> str:
+        return (f"MinimalSource(file_path='{self.file_path}', "
+                f"first_character_index={self.first_character_index}, "
+                f"last_character_index={self.last_character_index})")
+
+    def get_source_text(self) -> str:
+        """Retrieve the text from the source file based on the char index."""
+        try:
+            with open(self.file_path, 'r', encoding='utf-8') as file:
+                file.seek(self.first_character_index)
+                return file.read(
+                    self.last_character_index - self.first_character_index)
+        except Exception as e:
+            raise ValueError(
+                f"Error retrieving source text from {self.file_path}: {e}"
+            )
+
 
 class UnansweredQuestion(StrictBaseModel):
     question_id: str = Field(default_factory=lambda:
