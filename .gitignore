@@ -1,3 +1,4 @@
 .python-version
 src/ragatm.egg-info
 src/__pycache__/
+.venv/

@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import fire
+import logging
+from src.chunker import ChunkerFactory, _COLOR_RED, _COLOR_RESET
+from src.indexer import ChunkCollector
 
+logging.basicConfig(level=logging.INFO)
 
 def _missing_implementation(command_name: str) -> None:
     raise NotImplementedError(
@@ -19,9 +23,13 @@ def _missing_implementation(command_name: str) -> None:
 class CLI:
     """Fire command surface for the project."""
 
-    def index(self, max_chunk_size: int = 2000) -> None:
-        _ = max_chunk_size
-        _missing_implementation("index")
+    def index(self,
+              max_chunk_size: int = 2000,
+              directory: str = "data/raw") -> None:
+        logging.info(f"Indexing with max_chunk_size={max_chunk_size}...")
+        ChunkCollector(
+            directory=directory,
+            max_chunk_size=max_chunk_size).collect_chunks()
 
     def search(self, query: str, k: int = 5) -> Any:
         _ = query

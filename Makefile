@@ -42,6 +42,7 @@ debug:
 
 clean:
 	rm -rf __pycache__ .mypy_cache
+	rm -rf src/__pycache__ src/*.egg-info
 
 lint:
 	uv run flake8 src --exclude .venv
