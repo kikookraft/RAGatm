@@ -1,5 +1,4 @@
 import uuid
-import os
 from typing import List
 
 from pydantic import (
@@ -12,10 +11,19 @@ from pydantic import (
 
 
 class StrictBaseModel(BaseModel):
-    model_config = ConfigDict(strict=True, extra='forbid')
+    """Base model: strict types, but tolerate unknown extra fields.
+
+    External datasets carry additional keys (e.g. ``difficulty``,
+    ``is_valid``) that are not part of the subject's models, so extra
+    fields must be ignored rather than rejected.
+    """
+
+    model_config = ConfigDict(strict=True, extra='ignore')
 
 
 class MinimalSource(StrictBaseModel):
+    """A single source location: a file path and a character span."""
+
     file_path: str
     first_character_index: int = Field(ge=0)
     last_character_index: int = Field(ge=0)
@@ -23,19 +31,10 @@ class MinimalSource(StrictBaseModel):
     @field_validator('file_path')
     @classmethod
     def validate_file_path(cls, value: str) -> str:
+        """Ensure the path is non-empty; no filesystem access here."""
         cleaned_value = value.strip()
         if not cleaned_value:
             raise ValueError('file_path cannot be empty')
-        try:
-            if not os.path.exists(cleaned_value):
-                raise ValueError(f'file_path does not exist: {cleaned_value}')
-            with open(cleaned_value, 'r'):
-                pass
-        except FileNotFoundError:
-            raise ValueError(f'file_path does not exist: {cleaned_value}')
-        except Exception as e:
-            raise ValueError(
-                f'Error accessing file_path: {cleaned_value}. Error: {e}')
         return cleaned_value
 
     @model_validator(mode='after')
@@ -55,12 +54,16 @@ class MinimalSource(StrictBaseModel):
                 f"last_character_index={self.last_character_index})")
 
     def get_source_text(self) -> str:
-        """Retrieve the text from the source file based on the char index."""
+        """Retrieve the text of the chunk from its source file.
+
+        Text-mode ``seek()`` positions by an opaque cookie, not by
+        character offset, so the whole file is read and sliced instead.
+        """
         try:
             with open(self.file_path, 'r', encoding='utf-8') as file:
-                file.seek(self.first_character_index)
-                return file.read(
-                    self.last_character_index - self.first_character_index)
+                return file.read()[
+                    self.first_character_index:self.last_character_index
+                ]
         except Exception as e:
             raise ValueError(
                 f"Error retrieving source text from {self.file_path}: {e}"

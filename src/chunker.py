@@ -43,6 +43,18 @@ class BaseChunker(ABC):
         )
 
     @staticmethod
+    def _absolute_offset(data: str, lineno: int, col_offset: int) -> int:
+        """Convert an AST ``(lineno, col_offset)`` pair to a char offset.
+
+        ``lineno`` is 1-based; ``col_offset`` counts characters from the
+        start of the line.
+        """
+        lines = data.splitlines(keepends=True)
+        line_index = min(lineno - 1, len(lines) - 1)
+        offset = sum(len(line) for line in lines[:line_index])
+        return offset + col_offset
+
+    @staticmethod
     def _split_by_lines(
         data: str,
         start_offset: int,
@@ -101,12 +113,18 @@ class PythonChunker(BaseChunker):
         # collect (start, end, text) tuples, then sort by start offset
         raw_segments: List[Tuple[int, int, str]] = []
         for node in tree.body:
-            seg_text = ast.get_source_segment(data, node)
-            if seg_text is None or not seg_text.strip():
+            # Use AST line/col offsets instead of data.index(seg_text):
+            # index() would map duplicated snippets to the wrong offsets.
+            node_start = self._absolute_offset(data, node.lineno,
+                                               node.col_offset)
+            node_end = self._absolute_offset(
+                data,
+                node.end_lineno if node.end_lineno is not None else 0,
+                node.end_col_offset or 0,
+            )
+            seg_text = data[node_start:node_end]
+            if not seg_text.strip():
                 continue
-
-            node_start = data.index(seg_text)
-            node_end = node_start + len(seg_text)
 
             if len(seg_text) <= self.max_chunk_size:
                 raw_segments.append((node_start, node_end, seg_text))
@@ -228,6 +246,26 @@ _TEXT_EXTENSIONS: frozenset[str] = frozenset(
     {".md", ".markdown", ".rst", ".txt",
      ".cfg", ".ini", ".toml", ".yaml", ".yml"}
 )
+# Source/config files worth indexing with the plain-text fallback
+_CODE_EXTENSIONS: frozenset[str] = frozenset(
+    {".c", ".h", ".cpp", ".cc", ".hpp", ".cu", ".cuh",
+     ".sh", ".bash", ".cmake", ".json"}
+)
+
+
+class PlainTextChunker(BaseChunker):
+    """Chunk any file generically at line boundaries.
+
+    Used for extensions that have no dedicated strategy (C/C++/CUDA
+    sources, shell scripts, JSON, ...). Falls back to hard character
+    splits for very long lines.
+    """
+
+    def chunk(self, file_path: str, data: str) -> List[MinimalSource]:
+        return [
+            self._build_source(file_path, data[s:e], s, e)
+            for s, e in self._split_by_lines(data, 0, self.max_chunk_size)
+        ]
 
 
 class ChunkerFactory:
@@ -242,10 +280,8 @@ class ChunkerFactory:
             max_chunk_size: Maximum character width of each chunk.
 
         Returns:
-            A :class:`BaseChunker` subclass instance.
-
-        Raises:
-            ValueError: If the file extension is not supported.
+            A :class:`BaseChunker` subclass instance. Unknown
+            extensions get the :class:`PlainTextChunker` fallback.
         """
         _, ext = os.path.splitext(file_path)
         ext_lower = ext.lower()
@@ -254,8 +290,14 @@ class ChunkerFactory:
             return PythonChunker(max_chunk_size)
         if ext_lower in _TEXT_EXTENSIONS:
             return TextChunker(max_chunk_size)
+        if ext_lower in _CODE_EXTENSIONS:
+            return PlainTextChunker(max_chunk_size)
 
-        raise ValueError(f"Unsupported file extension: '{ext}' ({file_path})")
+        logger.debug(
+            "No dedicated chunker for '%s' — using plain-text fallback",
+            file_path,
+        )
+        return PlainTextChunker(max_chunk_size)
 
 
 if __name__ == "__main__":

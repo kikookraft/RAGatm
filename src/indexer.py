@@ -64,6 +64,3 @@ if __name__ == "__main__":
     print(f"Collected {len(chunk_collector.get_chunks())} chunks.")
     all_texts = chunk_collector.fetch_all()
     print(f"Total text length: {sum(len(text) for text in all_texts)}")
-    input("Press Enter to print all collected chunks...")
-    for chunk in chunk_collector.fetch_all():
-        print(chunk)
