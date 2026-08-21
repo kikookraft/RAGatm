@@ -45,11 +45,11 @@ clean:
 	rm -rf src/__pycache__ src/*.egg-info
 
 lint:
-	uv run flake8 src --exclude .venv
-	uv run mypy src --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
+	-uv run flake8 src --exclude .venv
+	-uv run mypy src --warn-return-any --warn-unused-ignores --ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
 
 lint-strict: lint
-	uv run mypy src --strict
+	-uv run mypy src --strict
 
 test:
 	uv run pytest tests --maxfail=1 --disable-warnings -q

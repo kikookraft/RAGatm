@@ -7,10 +7,10 @@ from typing import Any
 
 import fire
 import logging
-from src.chunker import ChunkerFactory, _COLOR_RED, _COLOR_RESET
-from src.indexer import ChunkCollector
+from src.indexer import Indexer
 
 logging.basicConfig(level=logging.INFO)
+
 
 def _missing_implementation(command_name: str) -> None:
     raise NotImplementedError(
@@ -26,20 +26,21 @@ class CLI:
     def index(self,
               max_chunk_size: int = 2000,
               directory: str = "data/raw") -> None:
-        logging.info(f"Indexing with max_chunk_size={max_chunk_size}...")
-        ChunkCollector(
-            directory=directory,
-            max_chunk_size=max_chunk_size).collect_chunks()
+        """Build the BM25 index and persist it under data/processed/."""
+        logging.info("Indexing with max_chunk_size=%d...", max_chunk_size)
+        indexer = Indexer(directory, max_chunk_size)
+        indexed = indexer.build_index()
+        indexer.save()
+        logging.info("Indexed %d chunks.", indexed)
 
     def search(self, query: str, k: int = 5) -> Any:
-        _ = query
-        _ = k
-        return _missing_implementation("search")
+        indexer = Indexer.load()
+        indexer.print_best_results(query, k)
 
     def search_dataset(
         self,
         dataset_path: str,
-        k: int = 5,
+        k: int = 10,
         save_directory: str = "data/output/search_results",
     ) -> None:
         _ = dataset_path
@@ -47,7 +48,7 @@ class CLI:
         _ = save_directory
         _missing_implementation("search_dataset")
 
-    def answer(self, query: str, k: int = 5) -> Any:
+    def answer(self, query: str, k: int = 10) -> Any:
         _ = query
         _ = k
         return _missing_implementation("answer")
@@ -65,7 +66,7 @@ class CLI:
         self,
         student_search_results_path: str,
         dataset_path: str,
-        k: int = 5,
+        k: int = 10,
     ) -> None:
         _ = student_search_results_path
         _ = dataset_path
