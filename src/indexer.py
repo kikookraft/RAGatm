@@ -1,6 +1,6 @@
 # import bm25s
 from tqdm import tqdm
-from src.chunker import ChunkerFactory
+from src.chunker import ChunkerFactory, _COLOR_RED, _COLOR_RESET
 from src.models import MinimalSource
 from typing import List
 from src.chunker import BaseChunker
@@ -41,14 +41,19 @@ class ChunkCollector:
                     for chunk in chunks:
                         self.add_chunk(chunk)
             except Exception as e:
-                print(f"\033[91mError reading {file_path}: {e}\033[0m")
+                tqdm.write(
+                    f"{_COLOR_RED}Error reading {file_path}: {e}{_COLOR_RESET}"
+                )
 
     def fetch_chunk_text(self, chunk: MinimalSource) -> str:
         """Fetch the text of a chunk from its source file."""
         try:
             return chunk.get_source_text()
         except Exception as e:
-            print(f"\033[91mError fetching text for {chunk}: {e}\033[0m")
+            tqdm.write(
+                f"{_COLOR_RED}Error fetching text for {chunk}: "
+                f"{e}{_COLOR_RESET}"
+            )
             return ""
 
     def fetch_all(self) -> List[str]:

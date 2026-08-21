@@ -6,9 +6,16 @@ import os
 from abc import ABC, abstractmethod
 from typing import List, Tuple
 
+from tqdm import tqdm
+
 from src.models import MinimalSource
 
 logger = logging.getLogger(__name__)
+
+# ANSI color codes for terminal output
+_COLOR_RED = "\033[91m"
+_COLOR_YELLOW = "\033[93m"
+_COLOR_RESET = "\033[0m"
 
 
 class BaseChunker(ABC):
@@ -101,9 +108,9 @@ class PythonChunker(BaseChunker):
         try:
             tree = ast.parse(data)
         except SyntaxError:
-            logger.warning(
-                "Syntax error in %s — falling back to line splitting",
-                file_path,
+            tqdm.write(
+                f"{_COLOR_YELLOW}Syntax error in {file_path} — falling "
+                f"back to line splitting{_COLOR_RESET}"
             )
             return [
                 self._build_source(file_path, data[s:e], s, e)
