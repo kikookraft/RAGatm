@@ -230,7 +230,9 @@ class Indexer:
             logger.warning("Empty query — returning no results.")
             return []
         if not self._is_indexed:
-            raise RuntimeError("Index not built — call build_index() first.")
+            logger.warning("Index not built — building it now...")
+            self.build_index()
+            # raise RuntimeError("Index not built — call build_index() first.")
 
         query_tokens = bm25s.tokenize(
             query, stopwords="en", stemmer=self.stemmer
@@ -260,7 +262,8 @@ class Indexer:
             The directory the index was written to.
         """
         if not self._is_indexed:
-            raise RuntimeError("Nothing to save — call build_index() first.")
+            self.build_index()
+            # raise RuntimeError("Nothing to save — call build_index() first.")
         target: str = index_directory or self.index_directory
         os.makedirs(target, exist_ok=True)
         self.retriever.save(os.path.join(target, "bm25"))
