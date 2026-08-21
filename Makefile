@@ -8,6 +8,10 @@ export HF_HOME          = /goinfre/$(USER)/hf_cache
 unexport VIRTUAL_ENV
 
 # Arguments for run
+# Usage examples:
+#   make index ARGS="--max_chunk_size 2000"
+#   make search ARGS="'how to load a LoRA adapter' --k 10"
+#   make search_dataset ARGS="--dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json --k 10 --save_directory data/output/search_results/UnansweredQuestions"
 ARGS ?=
 
 install:
@@ -17,24 +21,25 @@ install:
 run:
 	uv run python -m src $(ARGS)
 
-# Aliases for each subcommand
+# Aliases for each subcommand (direct invocation: no recursion, so
+# command-line ARGS are never overridden by a nested make).
 index:
-	$(MAKE) run ARGS="index $(ARGS)"
+	uv run python -m src index $(ARGS)
 
 search:
-	$(MAKE) run ARGS="search $(ARGS)"
+	uv run python -m src search $(ARGS)
 
 search_dataset:
-	$(MAKE) run ARGS="search_dataset $(ARGS)"
+	uv run python -m src search_dataset $(ARGS)
 
 answer:
-	$(MAKE) run ARGS="answer $(ARGS)"
+	uv run python -m src answer $(ARGS)
 
 answer_dataset:
-	$(MAKE) run ARGS="answer_dataset $(ARGS)"
+	uv run python -m src answer_dataset $(ARGS)
 
 evaluate:
-	$(MAKE) run ARGS="evaluate $(ARGS)"
+	uv run python -m src evaluate $(ARGS)
 
 # Other targets
 debug:
@@ -43,6 +48,7 @@ debug:
 clean:
 	rm -rf __pycache__ .mypy_cache
 	rm -rf src/__pycache__ src/*.egg-info
+	rm -rf data/processed
 
 lint:
 	-uv run flake8 src --exclude .venv

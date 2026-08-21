@@ -8,8 +8,9 @@ from typing import Any
 import fire
 import logging
 from src.indexer import Indexer
+from src.logging_config import configure_logging
 
-logging.basicConfig(level=logging.INFO)
+configure_logging(level=logging.INFO)
 
 
 def _missing_implementation(command_name: str) -> None:
