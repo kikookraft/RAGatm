@@ -1,7 +1,7 @@
 # import bm25s
 from tqdm import tqdm
-from chunker import ChunkerFactory
-from models import MinimalSource
+from src.chunker import ChunkerFactory
+from src.models import MinimalSource
 from typing import List
 from src.chunker import BaseChunker
 # docs in https://github.com/xhluca/bm25s
@@ -42,3 +42,28 @@ class ChunkCollector:
                         self.add_chunk(chunk)
             except Exception as e:
                 print(f"\033[91mError reading {file_path}: {e}\033[0m")
+
+    def fetch_chunk_text(self, chunk: MinimalSource) -> str:
+        """Fetch the text of a chunk from its source file."""
+        try:
+            return chunk.get_source_text()
+        except Exception as e:
+            print(f"\033[91mError fetching text for {chunk}: {e}\033[0m")
+            return ""
+
+    def fetch_all(self) -> List[str]:
+        """Fetch the text of all chunks."""
+        return [self.fetch_chunk_text(chunk) for chunk in self.chunks]
+
+
+if __name__ == "__main__":
+    directory = "data/raw"
+    max_chunk_size = 2000
+    chunk_collector = ChunkCollector(directory, max_chunk_size)
+    chunk_collector.collect_chunks()
+    print(f"Collected {len(chunk_collector.get_chunks())} chunks.")
+    all_texts = chunk_collector.fetch_all()
+    print(f"Total text length: {sum(len(text) for text in all_texts)}")
+    input("Press Enter to print all collected chunks...")
+    for chunk in chunk_collector.fetch_all():
+        print(chunk)
