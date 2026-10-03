@@ -3,3 +3,4 @@ src/ragatm.egg-info
 src/__pycache__/
 .venv/
 data/processed/
+**.pyc
