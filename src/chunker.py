@@ -4,7 +4,7 @@ import ast
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from tqdm import tqdm
 
@@ -38,11 +38,23 @@ class BaseChunker(ABC):
         text: str,
         start_char: int,
         end_char: int,
-    ) -> MinimalSource:
+    ) -> Optional[MinimalSource]:
         """Factory for a single MinimalSource with consistent semantics.
 
-        *start_char* is inclusive, *end_char* is exclusive
+        *start_char* is inclusive, *end_char* is exclusive.
+
+        Returns ``None`` when the span is empty or reversed, so that a
+        degenerate boundary can never produce a source that
+        :class:`MinimalSource` rejects.
         """
+        if end_char <= start_char:
+            logger.debug(
+                "Skipping empty span %d:%d in %s",
+                start_char,
+                end_char,
+                file_path,
+            )
+            return None
         return MinimalSource(
             file_path=file_path,
             first_character_index=start_char,
@@ -113,8 +125,10 @@ class PythonChunker(BaseChunker):
                 f"back to line splitting{_COLOR_RESET}"
             )
             return [
-                self._build_source(file_path, data[s:e], s, e)
+                source
                 for s, e in self._split_by_lines(data, 0, self.max_chunk_size)
+                if (source := self._build_source(file_path, data[s:e], s, e))
+                is not None
             ]
 
         # collect (start, end, text) tuples, then sort by start offset
@@ -210,11 +224,11 @@ class TextChunker(BaseChunker):
 
         while remaining:
             if len(remaining) <= self.max_chunk_size:
-                sources.append(
-                    self._build_source(
-                        file_path, remaining, cursor, cursor + len(remaining)
-                    )
+                tail = self._build_source(
+                    file_path, remaining, cursor, cursor + len(remaining)
                 )
+                if tail is not None:
+                    sources.append(tail)
                 break
 
             cut = remaining.rfind("\n\n", 0, self.max_chunk_size)
@@ -230,17 +244,24 @@ class TextChunker(BaseChunker):
             if cut == -1:
                 cut = remaining.rfind(" ", 0, self.max_chunk_size)
 
-            if cut == -1:
+            if cut <= 0:
+                # A boundary at offset 0 (or no boundary at all) would
+                # produce an empty chunk and the cursor would never
+                # advance — fall back to a hard cut at max_size.
                 cut = self.max_chunk_size
 
-            sources.append(
-                self._build_source(
-                    file_path,
-                    remaining[:cut],
-                    cursor,
-                    cursor + cut,
-                )
+            # A punctuation match ending exactly at the limit can push the
+            # cut past max_size; clamp so no chunk ever exceeds it.
+            cut = min(cut, self.max_chunk_size)
+
+            source = self._build_source(
+                file_path,
+                remaining[:cut],
+                cursor,
+                cursor + cut,
             )
+            if source is not None:
+                sources.append(source)
             cursor += cut
             remaining = remaining[cut:]
 
@@ -270,8 +291,10 @@ class PlainTextChunker(BaseChunker):
 
     def chunk(self, file_path: str, data: str) -> List[MinimalSource]:
         return [
-            self._build_source(file_path, data[s:e], s, e)
+            source
             for s, e in self._split_by_lines(data, 0, self.max_chunk_size)
+            if (source := self._build_source(file_path, data[s:e], s, e))
+            is not None
         ]
 
 

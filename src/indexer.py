@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 
 #: The moulinette rejects any retrieved source longer than this many
 #: characters, so chunking must never produce wider chunks.
+#: -1 to disable the limit
 MAX_CONTEXT_LENGTH: int = 2000
 #: Default directory where the index is persisted.
 DEFAULT_INDEX_DIRECTORY: str = "data/processed"
@@ -50,7 +51,7 @@ def _validate_chunk_size(max_chunk_size: int) -> int:
     """
     if not isinstance(max_chunk_size, int) or max_chunk_size <= 0:
         raise ValueError("max_chunk_size must be a positive integer")
-    if max_chunk_size > MAX_CONTEXT_LENGTH:
+    if MAX_CONTEXT_LENGTH > 0 and max_chunk_size > MAX_CONTEXT_LENGTH:
         logger.warning(
             "max_chunk_size=%d exceeds the moulinette limit of %d — "
             "clamping to %d.",
@@ -59,6 +60,12 @@ def _validate_chunk_size(max_chunk_size: int) -> int:
             MAX_CONTEXT_LENGTH,
         )
         return MAX_CONTEXT_LENGTH
+    if MAX_CONTEXT_LENGTH > 0 and max_chunk_size < 20:
+        logger.warning(
+            "max_chunk_size=%d is very small — this may produce too many "
+            "chunks and slow down indexing.",
+            max_chunk_size,
+        )
     return max_chunk_size
 
 
@@ -117,26 +124,32 @@ class ChunkCollector:
         """Chunk every discoverable file and store the resulting spans."""
         self.chunks = []
         self._text_cache = {}
-        for file_path in tqdm(
-            discovery(self.directory),
-            desc="Collecting chunks",
-            unit="file",
-            colour="cyan",
-        ):
-            text = self._read_file(file_path)
-            if text is None:
-                continue
-            try:
-                chunker: BaseChunker = ChunkerFactory.get_chunker(
-                    file_path, self.max_chunk_size
-                )
-                for chunk in chunker.chunk(file_path, text):
-                    self.add_chunk(chunk)
-            except Exception as exc:  # one bad file must not kill the run
-                tqdm.write(
-                    f"{_COLOR_RED}Error chunking {file_path}: "
-                    f"{exc}{_COLOR_RESET}"
-                )
+        try:
+            for file_path in tqdm(
+                discovery(self.directory),
+                desc="Collecting chunks",
+                unit="file",
+                colour="cyan",
+            ):
+                text = self._read_file(file_path)
+                if text is None:
+                    continue
+                try:
+                    chunker: BaseChunker = ChunkerFactory.get_chunker(
+                        file_path, self.max_chunk_size
+                    )
+                    for chunk in chunker.chunk(file_path, text):
+                        self.add_chunk(chunk)
+                except Exception as exc:  # one bad file must not kill the run
+                    tqdm.write(
+                        f"{_COLOR_RED}Error chunking {file_path}: "
+                        f"{exc}{_COLOR_RESET}"
+                    )
+        except KeyboardInterrupt:
+            self.chunks = []
+            self._text_cache = {}
+            logger.info("Chunk collection cancelled.")
+            raise
 
     def fetch_chunk_text(self, chunk: MinimalSource) -> str:
         """Return the text covered by *chunk*, from cache when possible."""
@@ -200,6 +213,7 @@ class Indexer:
             The number of indexed chunks.
         """
         logger.info("Collecting and tokenizing the corpus...")
+        self._is_indexed = False
         self.chunk_collector.collect_chunks()
         corpus: List[str] = self.chunk_collector.fetch_all()
         if not corpus:
@@ -260,10 +274,16 @@ class Indexer:
 
         Returns:
             The directory the index was written to.
+
+        Raises:
+            RuntimeError: If no complete index has been built yet.
         """
         if not self._is_indexed:
-            self.build_index()
-            # raise RuntimeError("Nothing to save — call build_index() first.")
+            # Refuse to write a truncated index: load() would then happily
+            # read back a corpus missing most of its chunks.
+            raise RuntimeError(
+                "Refusing to save: no complete index has been built."
+            )
         target: str = index_directory or self.index_directory
         os.makedirs(target, exist_ok=True)
         self.retriever.save(os.path.join(target, "bm25"))

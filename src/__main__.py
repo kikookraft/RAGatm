@@ -9,6 +9,7 @@ import fire
 import logging
 from src.indexer import Indexer
 from src.logging_config import configure_logging
+import os
 
 configure_logging(level=logging.INFO)
 
@@ -28,11 +29,33 @@ class CLI:
               max_chunk_size: int = 2000,
               directory: str = "data/raw") -> None:
         """Build the BM25 index and persist it under data/processed/."""
+        if type(max_chunk_size) is not int or max_chunk_size <= 0:
+            logging.error("max_chunk_size must be a positive integer.")
+            return
+        if type(directory) is not str:
+            logging.error("directory must be a string.")
+            return
+        if os.path.exists(directory) is False:
+            logging.error("directory does not exist.")
+            return
         logging.info("Indexing with max_chunk_size=%d...", max_chunk_size)
-        indexer = Indexer(directory, max_chunk_size)
-        indexed = indexer.build_index()
-        indexer.save()
-        logging.info("Indexed %d chunks.", indexed)
+        try:
+            indexer = Indexer(directory, max_chunk_size)
+            indexed = indexer.build_index()
+            indexer.save()
+            logging.info("Indexed %d chunks.", indexed)
+        except KeyboardInterrupt:
+            # KeyboardInterrupt derives from BaseException, so the
+            # `except Exception` below never sees it. Catch it explicitly
+            # to report cleanly instead of dumping a traceback.
+            logging.warning(
+                "Indexing interrupted — nothing was written. "
+                "Re-run to try again."
+            )
+            raise SystemExit(130) from None
+        except Exception as e:
+            logging.error("Indexing failed: %s", e)
+        return
 
     def search(self, query: str, k: int = 5) -> Any:
         indexer = Indexer.load()
@@ -76,9 +99,18 @@ class CLI:
 
 
 def main() -> None:
-    """Run the Fire command dispatcher."""
+    """Run the Fire command dispatcher.
 
-    fire.Fire(CLI)
+    Installs a last-resort ``SIGINT`` handler so that a Ctrl-C landing
+    anywhere in the pipeline — including inside third-party code such as
+    ``bm25s`` or ``tqdm`` — exits with a short message and status code
+    130 instead of an unhandled ``KeyboardInterrupt`` traceback.
+    """
+    try:
+        fire.Fire(CLI)
+    except KeyboardInterrupt:
+        logging.warning("\nInterrupted — shutting down.")
+        raise SystemExit(130) from None
 
 
 if __name__ == "__main__":
