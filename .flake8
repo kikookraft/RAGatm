@@ -1,0 +1,7 @@
+[flake8]
+# flake8 does not read pyproject.toml, so its config lives here.
+max-line-length = 80
+# E203/W503 conflict with black-style slicing and line breaks before
+# binary operators, which flake8 flags but PEP 8 explicitly allows.
+extend-ignore = E203, W503
+exclude = .venv,__pycache__,data

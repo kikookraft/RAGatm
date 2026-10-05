@@ -24,3 +24,8 @@ ignore_missing_imports = false
 [[tool.mypy.overrides]]
 module = "fire"
 ignore_missing_imports = true
+
+# bm 25s and Stemmer ship no type information 
+[[tool.mypy.overrides]]
+module = ["bm25s", "Stemmer"]
+ignore_missing_imports = true

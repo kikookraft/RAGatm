@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Dict, Optional
+from typing import Dict, Optional, TextIO
 
 # ANSI escape codes used by the formatter.
 _GRAY = "\033[90m"
@@ -50,17 +50,16 @@ class ColorFormatter(logging.Formatter):
             record.levelname = original_levelname
 
 
-class SafeStreamHandler(logging.StreamHandler):  # pragma: no cover
+class SafeStreamHandler(logging.StreamHandler[TextIO]):  # pragma: no cover
     """Stream handler that survives closed/broken output streams.
 
     Prevents a crash at interpreter shutdown when logging after the
     stream has been torn down.
     """
 
-    def __init__(self, stream: Optional[object] = None) -> None:
+    def __init__(self, stream: Optional[TextIO] = None) -> None:
         """Initialize the handler on an optional *stream*."""
-        target = sys.stderr if stream is None else stream
-        super().__init__(target)
+        super().__init__(sys.stderr if stream is None else stream)
 
     def emit(self, record: logging.LogRecord) -> None:
         """Emit *record*, swallowing any I/O error."""

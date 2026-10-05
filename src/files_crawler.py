@@ -19,8 +19,8 @@ _CODE_EXTENSIONS: frozenset[str] = frozenset(
      ".sh", ".bash", ".cmake", ".json"}
 )
 
-_INDEXABLE_EXTENSIONS = _PYTHON_EXTENSIONS.union(_TEXT_EXTENSIONS).union(
-    _CODE_EXTENSIONS)
+_INDEXABLE_EXTENSIONS = _PYTHON_EXTENSIONS.union(_TEXT_EXTENSIONS)  # .union(
+# _CODE_EXTENSIONS)
 
 
 def discovery(root_dir: str) -> list[str]:

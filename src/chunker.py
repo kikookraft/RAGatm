@@ -61,6 +61,23 @@ class BaseChunker(ABC):
             last_character_index=end_char,
         )
 
+    def _emit(
+        self,
+        sources: List[MinimalSource],
+        file_path: str,
+        text: str,
+        start_char: int,
+        end_char: int,
+    ) -> None:
+        """Append the source for a span to *sources*, skipping empty ones.
+
+        Thin wrapper around :meth:`_build_source` for call sites inside a
+        loop, where an empty span should be dropped rather than handled.
+        """
+        source = self._build_source(file_path, text, start_char, end_char)
+        if source is not None:
+            sources.append(source)
+
     @staticmethod
     def _absolute_offset(data: str, lineno: int, col_offset: int) -> int:
         """Convert an AST ``(lineno, col_offset)`` pair to a char offset.
@@ -124,12 +141,11 @@ class PythonChunker(BaseChunker):
                 f"{_COLOR_YELLOW}Syntax error in {file_path} — falling "
                 f"back to line splitting{_COLOR_RESET}"
             )
-            return [
-                source
-                for s, e in self._split_by_lines(data, 0, self.max_chunk_size)
-                if (source := self._build_source(file_path, data[s:e], s, e))
-                is not None
-            ]
+            for start, end in self._split_by_lines(
+                data, 0, self.max_chunk_size
+            ):
+                self._emit(sources, file_path, data[start:end], start, end)
+            return sources
 
         # collect (start, end, text) tuples, then sort by start offset
         raw_segments: List[Tuple[int, int, str]] = []
@@ -189,24 +205,22 @@ class PythonChunker(BaseChunker):
             if (seg_end - current_start) <= self.max_chunk_size:
                 current_end = seg_end
             else:
-                sources.append(
-                    self._build_source(
-                        file_path,
-                        data[current_start:current_end],
-                        current_start,
-                        current_end,
-                    )
+                self._emit(
+                    sources,
+                    file_path,
+                    data[current_start:current_end],
+                    current_start,
+                    current_end,
                 )
                 current_start = seg_start
                 current_end = seg_end
 
-        sources.append(
-            self._build_source(
-                file_path,
-                data[current_start:current_end],
-                current_start,
-                current_end,
-            )
+        self._emit(
+            sources,
+            file_path,
+            data[current_start:current_end],
+            current_start,
+            current_end,
         )
 
         return sources
@@ -224,11 +238,10 @@ class TextChunker(BaseChunker):
 
         while remaining:
             if len(remaining) <= self.max_chunk_size:
-                tail = self._build_source(
-                    file_path, remaining, cursor, cursor + len(remaining)
+                self._emit(
+                    sources, file_path, remaining, cursor,
+                    cursor + len(remaining)
                 )
-                if tail is not None:
-                    sources.append(tail)
                 break
 
             cut = remaining.rfind("\n\n", 0, self.max_chunk_size)
@@ -254,14 +267,13 @@ class TextChunker(BaseChunker):
             # cut past max_size; clamp so no chunk ever exceeds it.
             cut = min(cut, self.max_chunk_size)
 
-            source = self._build_source(
+            self._emit(
+                sources,
                 file_path,
                 remaining[:cut],
                 cursor,
                 cursor + cut,
             )
-            if source is not None:
-                sources.append(source)
             cursor += cut
             remaining = remaining[cut:]
 
@@ -290,12 +302,10 @@ class PlainTextChunker(BaseChunker):
     """
 
     def chunk(self, file_path: str, data: str) -> List[MinimalSource]:
-        return [
-            source
-            for s, e in self._split_by_lines(data, 0, self.max_chunk_size)
-            if (source := self._build_source(file_path, data[s:e], s, e))
-            is not None
-        ]
+        sources: List[MinimalSource] = []
+        for start, end in self._split_by_lines(data, 0, self.max_chunk_size):
+            self._emit(sources, file_path, data[start:end], start, end)
+        return sources
 
 
 class ChunkerFactory:
@@ -328,92 +338,3 @@ class ChunkerFactory:
             file_path,
         )
         return PlainTextChunker(max_chunk_size)
-
-
-if __name__ == "__main__":
-    import tempfile
-
-    logging.basicConfig(level=logging.DEBUG)
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        py_code = '''"""Module docstring."""
-
-import os
-import sys
-
-def add(a: int, b: int) -> int:
-    """Return the sum of two integers."""
-    return a + b
-
-class Calculator:
-    """A simple calculator."""
-
-    def multiply(self, x: int, y: int) -> int:
-        return x * y
-
-def greet(name: str) -> None:
-    print(f"Hello, {name}!")
-'''
-        py_path = os.path.join(tmpdir, "test.py")
-        with open(py_path, "w") as f:
-            f.write(py_code)
-
-        py_chunker = PythonChunker(max_chunk_size=120)
-        py_sources = py_chunker.chunk(py_path, py_code)
-        print(f"\nPython chunks ({len(py_sources)}):")
-        for i, src in enumerate(py_sources):
-            span = src.last_character_index - src.first_character_index
-            preview = py_code[
-                src.first_character_index:src.last_character_index]
-            preview = preview[:60].replace("\n", "\\n")
-            print(
-                f"  [{i}] {src.first_character_index}:"
-                f"{src.last_character_index}"
-                f" ({span} chars) | {preview}..."
-            )
-
-        # --- Text chunker smoke test ---------------------------------------
-        md_text = (
-            "## Introduction\n\n"
-            "This is the first paragraph. It contains several sentences. "
-            "Each one ends with punctuation.\n\n"
-            "## Details\n\n"
-            "Another paragraph here with more content to demonstrate "
-            "the chunking behavior on markdown text files."
-        )
-        md_path = os.path.join(tmpdir, "readme.md")
-        with open(md_path, "w") as f:
-            f.write(md_text)
-
-        text_chunker = TextChunker(max_chunk_size=200)
-        txt_sources = text_chunker.chunk(md_path, md_text)
-        print(f"\nMarkdown chunks ({len(txt_sources)}):")
-        for i, src in enumerate(txt_sources):
-            span = src.last_character_index - src.first_character_index
-            preview = md_text[
-                src.first_character_index:src.last_character_index
-            ]
-            preview = preview[:80].replace("\n", "\\n")
-            print(
-                f"  [{i}] {src.first_character_index}:"
-                f"{src.last_character_index}"
-                f" ({span} chars) | {preview}..."
-            )
-
-        # --- Factory test --------------------------------------------------
-        for ext in (".py", ".pyw", ".pyx", ".md", ".rst", ".txt", ".ini"):
-            path = os.path.join(tmpdir, f"dummy{ext}")
-            try:
-                chunker = ChunkerFactory.get_chunker(path, 500)
-                print(f"\n{ext:8s} → {type(chunker).__name__}")
-            except ValueError as e:
-                print(f"\n{ext:8s} → ERROR: {e}")
-
-        # --- Test unsupported extension ------------------------------------
-        try:
-            ChunkerFactory.get_chunker("foo.bin", 500)
-            print("\n.bin   → ERROR: should have raised ValueError")
-        except ValueError:
-            print("\n.bin   → ValueError (expected)")
-
-    print("\n✅ All smoke tests passed.")
