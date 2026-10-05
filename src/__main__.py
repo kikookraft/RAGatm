@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from typing import Any
 
 import fire
@@ -45,9 +46,6 @@ class CLI:
             indexer.save()
             logging.info("Indexed %d chunks.", indexed)
         except KeyboardInterrupt:
-            # KeyboardInterrupt derives from BaseException, so the
-            # `except Exception` below never sees it. Catch it explicitly
-            # to report cleanly instead of dumping a traceback.
             logging.warning(
                 "Indexing interrupted — nothing was written. "
                 "Re-run to try again."
@@ -58,8 +56,25 @@ class CLI:
         return
 
     def search(self, query: str, k: int = 5) -> Any:
-        indexer = Indexer.load()
-        indexer.print_best_results(query, k)
+        try:
+            if type(query) is not str:
+                logging.error("query must be a string.")
+                return
+            if type(k) is not int or k <= 0:
+                logging.error("k must be a positive integer.")
+                return
+        except Exception as e:
+            logging.error("Error in search parameters: %s", e)
+            return
+        try:
+            indexer = Indexer.load()
+            indexer.print_best_results(query, k)
+        except json.JSONDecodeError:
+            logging.error("Failed to load index, try make "
+                          "index first then retry the command")
+        except Exception as e:
+            logging.error("Search failed: %s", e)
+        return
 
     def search_dataset(
         self,
@@ -111,6 +126,9 @@ def main() -> None:
     except KeyboardInterrupt:
         logging.warning("\nInterrupted — shutting down.")
         raise SystemExit(130) from None
+    except Exception as e:
+        logging.error("Error: %s", e)
+        raise SystemExit(1) from None
 
 
 if __name__ == "__main__":

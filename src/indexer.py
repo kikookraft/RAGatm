@@ -315,10 +315,17 @@ class Indexer:
             )
         instance = cls(corpus_directory, index_directory=index_directory)
         instance.retriever = bm25s.BM25.load(bm25_path)
-        with open(chunks_path, "r", encoding="utf-8") as file:
-            instance.chunk_collector.chunks = [
-                MinimalSource(**item) for item in json.load(file)
-            ]
+        try:
+            with open(chunks_path, "r", encoding="utf-8") as file:
+                instance.chunk_collector.chunks = [
+                    MinimalSource(**item) for item in json.load(file)
+                ]
+        except json.JSONDecodeError as e:
+            logger.error("Error decoding chunks.json: %s", e)
+            raise
+        except Exception as e:
+            logger.error("Error loading chunks: %s", e)
+            raise
         instance._is_indexed = True
         logger.info(
             "Loaded index with %d chunks from %s",

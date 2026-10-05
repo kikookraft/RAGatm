@@ -320,8 +320,8 @@ class ChunkerFactory:
             return PythonChunker(max_chunk_size)
         if ext_lower in _TEXT_EXTENSIONS:
             return TextChunker(max_chunk_size)
-        if ext_lower in _CODE_EXTENSIONS:
-            return PlainTextChunker(max_chunk_size)
+        # if ext_lower in _CODE_EXTENSIONS:
+        #     return PlainTextChunker(max_chunk_size)
 
         logger.debug(
             "No dedicated chunker for '%s' — using plain-text fallback",
