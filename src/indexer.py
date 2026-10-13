@@ -229,14 +229,15 @@ class Indexer:
         return len(corpus)
 
     def search(
-        self, query: str, k: int = DEFAULT_K
+        self, query: str, k: int = DEFAULT_K, log_results: bool = True
     ) -> List[Tuple[MinimalSource, float]]:
         """Return the top-*k* chunks for *query* with their BM25 scores.
 
         Degenerate inputs (empty query, ``k=0``) yield an empty result
         list instead of raising.
         """
-        logger.info("Searching for query: %r with k=%d", query, k)
+        if log_results:
+            logger.info("Searching for query: %r with k=%d", query, k)
         k = _validate_k(k)
         if k == 0:
             return []
@@ -244,7 +245,8 @@ class Indexer:
             logger.warning("Empty query — returning no results.")
             return []
         if not self._is_indexed:
-            logger.warning("Index not built — building it now...")
+            if log_results:
+                logger.warning("Index not built — building it now...")
             self.build_index()
             # raise RuntimeError("Index not built — call build_index() first.")
 
