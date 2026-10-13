@@ -22,6 +22,9 @@ unexport VIRTUAL_ENV
 #   make index ARGS="--max_chunk_size 2000"
 #   make search ARGS="'how to load a LoRA adapter' --k 10"
 #   make search_dataset ARGS="--dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json --k 10 --save_directory data/output/search_results/UnansweredQuestions"
+#   make answer ARGS="'how to load a LoRA adapter' --k 10"
+#   make answer_dataset ARGS="--dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json --k 10 --save_directory data/output/answer_results/UnansweredQuestions"
+#   make evaluate ARGS="--dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json --k 10 --save_directory data/output/evaluate_results/UnansweredQuestions"
 ARGS ?=
 
 ifeq ($(DETECTED_OS),Windows)
