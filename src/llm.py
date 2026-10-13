@@ -9,11 +9,16 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Iterable, Sequence
+import time
+from typing import Any, Iterable, Sequence, cast
 
 import torch
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    TextIteratorStreamer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +28,10 @@ class ProgressTextIteratorStreamer(TextIteratorStreamer):
 
     def __init__(
         self,
-        *args,
-        progress_bar: tqdm,
+        *args: Any,
+        progress_bar: tqdm[Any],
         first_token_event: threading.Event,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.progress_bar = progress_bar
@@ -57,8 +62,8 @@ class LocalRAGModel:
         """
         self.model_name = model_name
         self.max_new_tokens = max_new_tokens
-        self.tokenizer: AutoTokenizer | None = None
-        self.model: AutoModelForCausalLM | None = None
+        self.tokenizer: Any = None
+        self.model: Any = None
         self.device: torch.device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
         )
@@ -67,7 +72,8 @@ class LocalRAGModel:
     def _load_model(self) -> None:
         """Load the tokenizer and model with visible progress feedback."""
         logger.info(
-            "Preparing to download/load %s from Hugging Face. This can take a while.",
+            "Preparing to download/load %s from "
+            "Hugging Face. This can take a while.",
             self.model_name,
         )
         logger.info("Loading tokenizer for %s", self.model_name)
@@ -118,14 +124,20 @@ class LocalRAGModel:
                 },
                 {"role": "user", "content": prompt},
             ]
-            return self.tokenizer.apply_chat_template(
-                messages,
-                return_tensors="pt",
-                add_generation_prompt=True,
-                enable_thinking=False,
+            return cast(
+                dict[str, torch.Tensor],
+                self.tokenizer.apply_chat_template(
+                    messages,
+                    return_tensors="pt",
+                    add_generation_prompt=True,
+                    enable_thinking=False,
+                ),
             )
 
-        return self.tokenizer(prompt, return_tensors="pt")
+        return cast(
+            dict[str, torch.Tensor],
+            self.tokenizer(prompt, return_tensors="pt"),
+        )
 
     def generate(self, prompt: str) -> str:
         if not self.loaded:
@@ -146,7 +158,10 @@ class LocalRAGModel:
                 key: value.to(self.device) for key, value in inputs.items()
             }
 
-        logger.info("Generating answer with max_new_tokens=%d", self.max_new_tokens)
+        logger.info(
+            "Generating answer with max_new_tokens=%d",
+            self.max_new_tokens,
+        )
         with tqdm(
             total=self.max_new_tokens,
             desc="Generating",
@@ -179,7 +194,10 @@ class LocalRAGModel:
             generation_thread.start()
 
             generated_chunks: list[str] = []
-            while not first_token_event.is_set() and generation_thread.is_alive():
+            while (
+                not first_token_event.is_set()
+                and generation_thread.is_alive()
+            ):
                 time.sleep(0.1)
             for chunk in streamer:
                 if chunk:
@@ -199,7 +217,9 @@ class LocalRAGModel:
 
     def answer_batch(
         self,
-        questions: Sequence[tuple[str, Sequence[str]]],
+        questions: Sequence[
+            tuple[str, Sequence[str]]
+        ],
     ) -> list[str]:
         """Answer multiple questions and show progress with tqdm."""
         results: list[str] = []
@@ -223,7 +243,13 @@ llm = LocalRAGModel()
 if __name__ == "__main__":
     example_question = "How do I configure the OpenAI-compatible server?"
     example_sources = [
-        "The OpenAI compatible server supports a --host option and a --port option.",
-        "Use the API server entry point to expose OpenAI-compatible endpoints.",
+        (
+            "The OpenAI compatible server supports a --host option "
+            "and a --port option."
+        ),
+        (
+            "Use the API server entry point to expose "
+            "OpenAI-compatible endpoints."
+        ),
     ]
     print(llm.answer(example_question, example_sources))

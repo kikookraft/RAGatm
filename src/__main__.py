@@ -50,7 +50,7 @@ def _write_json(path: Path, payload: Any) -> None:
 
 def _load_dataset(dataset_path: str) -> RagDataset:
     """Load and validate a RAG dataset from a JSON file."""
-    if not isinstance(dataset_path, str) or (  # type: ignore
+    if not isinstance(dataset_path, str) or (
             not dataset_path.strip()):
         raise ValueError("dataset_path must be a non-empty string")
     if not os.path.isfile(dataset_path):
@@ -149,13 +149,13 @@ class CLI:
     ) -> None:
         """Search every question in a dataset and write a JSON result file."""
         try:
-            if not isinstance(dataset_path, str) or (  # type: ignore
+            if not isinstance(dataset_path, str) or (
                     not dataset_path.strip()):
                 raise ValueError("dataset_path must be a non-empty string")
             if not os.path.isfile(dataset_path):
                 raise FileNotFoundError(
                     f"dataset file not found: {dataset_path}")
-            if not isinstance(k, int) or k <= 0:  # type: ignore
+            if not isinstance(k, int) or k <= 0:
                 raise ValueError("k must be a positive integer")
 
             dataset = _load_dataset(dataset_path)
@@ -215,7 +215,9 @@ class CLI:
             search_results = indexer.search(query, k)
             if not search_results:
                 logging.warning("No sources found for query: %s", query)
-                return {"question": query, "answer": "No relevant source context was found.", "retrieved_sources": []}
+                return {"question": query,
+                        "answer": "No relevant source context was found.",
+                        "retrieved_sources": []}
 
             sources: list[str] = []
             minimal_sources: list[MinimalSource] = []
@@ -224,13 +226,15 @@ class CLI:
                 try:
                     sources.append(_extract_file_text(source))
                 except Exception as exc:
-                    logging.warning("Failed to read source %s: %s", source.file_path, exc)
+                    logging.warning("Failed to read source %s: %s",
+                                    source.file_path, exc)
 
             answer = _get_llm().answer(query, sources)
             logging.info("Generated answer for query: %s", query)
             return {
                 "question": query,
-                "retrieved_sources": [source.model_dump(mode="json") for source in minimal_sources],
+                "retrieved_sources": [source.model_dump(
+                    mode="json") for source in minimal_sources],
                 "answer": answer,
             }
         except Exception as exc:
@@ -242,14 +246,20 @@ class CLI:
         student_search_results_path: str,
         save_directory: str = "data/output/search_results_and_answer",
     ) -> None:
-        """Generate answers for every result in a StudentSearchResults JSON file."""
+        """Generate answers for every result in a
+        StudentSearchResults JSON file."""
         try:
-            if not isinstance(student_search_results_path, str) or not student_search_results_path.strip():
-                raise ValueError("student_search_results_path must be a non-empty string")
+            if not isinstance(student_search_results_path, str
+                              ) or not student_search_results_path.strip():
+                raise ValueError(
+                    "student_search_results_path must be a non-empty string")
             if not os.path.isfile(student_search_results_path):
-                raise FileNotFoundError(f"search results file not found: {student_search_results_path}")
+                raise FileNotFoundError(
+                    "search results file not "
+                    f"found: {student_search_results_path}")
 
-            with open(student_search_results_path, "r", encoding="utf-8") as handle:
+            with open(student_search_results_path,
+                      "r", encoding="utf-8") as handle:
                 payload = StudentSearchResults.model_validate(json.load(handle))
 
             answers: list[MinimalAnswer] = []
@@ -267,7 +277,8 @@ class CLI:
                     try:
                         source_texts.append(_extract_file_text(source))
                     except Exception as exc:
-                        logging.warning("Skipping invalid source %s: %s", source.file_path, exc)
+                        logging.warning("Skipping invalid source %s: %s",
+                                        source.file_path, exc)
                 answer_text = _get_llm().answer(result.question, source_texts)
                 answers.append(
                     MinimalAnswer(
@@ -278,12 +289,14 @@ class CLI:
                     )
                 )
 
-            output_payload = StudentSearchResultsAndAnswer(search_results=answers, k=payload.k)
+            output_payload = StudentSearchResultsAndAnswer(
+                search_results=answers, k=payload.k)
             save_dir = Path(save_directory)
             save_dir.mkdir(parents=True, exist_ok=True)
             output_path = save_dir / Path(student_search_results_path).name
             _write_json(output_path, output_payload.model_dump(mode="json"))
-            logging.info("Saved student_search_results_and_answer to %s", output_path)
+            logging.info("Saved student_search_results_and_answer to %s",
+                         output_path)
             return None
         except KeyboardInterrupt:
             logging.warning("Answer generation interrupted.")
