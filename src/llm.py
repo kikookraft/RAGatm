@@ -8,8 +8,6 @@ progress in the terminal.
 from __future__ import annotations
 
 import logging
-import threading
-import time
 from typing import Any, Iterable, Sequence, cast
 
 import torch
@@ -17,33 +15,9 @@ from tqdm import tqdm
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    TextIteratorStreamer,
 )
 
 logger = logging.getLogger(__name__)
-
-
-class ProgressTextIteratorStreamer(TextIteratorStreamer):
-    """Text streamer that also advances a progress bar as tokens arrive."""
-
-    def __init__(
-        self,
-        *args: Any,
-        progress_bar: tqdm[Any],
-        first_token_event: threading.Event,
-        **kwargs: Any,
-    ) -> None:
-        super().__init__(*args, **kwargs)
-        self.progress_bar = progress_bar
-        self.first_token_event = first_token_event
-
-    def put(self, value: torch.Tensor) -> None:
-        """Forward tokens to the base streamer and update the progress bar."""
-        if not self.first_token_event.is_set():
-            self.first_token_event.set()
-            self.progress_bar.set_postfix_str("streaming")
-        self.progress_bar.update(1)
-        super().put(value)
 
 
 class LocalRAGModel:
@@ -140,10 +114,11 @@ class LocalRAGModel:
         )
 
     def generate(self, prompt: str) -> str:
+        """Generate a response for a prompt and return only the answer text."""
         if not self.loaded:
             self._load_model()
             self.loaded = True
-        """Generate a response for a prompt and return only the answer text."""
+
         if self.tokenizer is None:
             raise RuntimeError("Tokenizer is not initialized.")
         if self.model is None:
@@ -162,51 +137,21 @@ class LocalRAGModel:
             "Generating answer with max_new_tokens=%d",
             self.max_new_tokens,
         )
-        with tqdm(
-            total=self.max_new_tokens,
-            desc="Generating",
-            unit="tok",
-            leave=True,
-            dynamic_ncols=True,
-        ) as pbar:
-            first_token_event = threading.Event()
-            streamer = ProgressTextIteratorStreamer(
-                self.tokenizer,
-                skip_prompt=True,
-                skip_special_tokens=True,
-                progress_bar=pbar,
-                first_token_event=first_token_event,
-            )
-            generation_thread = threading.Thread(
-                target=self.model.generate,
-                kwargs={
-                    **inputs,
-                    "max_new_tokens": self.max_new_tokens,
-                    "do_sample": False,
-                    "repetition_penalty": 1.1,
-                    "no_repeat_ngram_size": 4,
-                    "pad_token_id": self.tokenizer.eos_token_id,
-                    "eos_token_id": self.tokenizer.eos_token_id,
-                    "streamer": streamer,
-                },
-                daemon=True,
-            )
-            generation_thread.start()
+        input_length = inputs["input_ids"].shape[1]
+        output_ids = self.model.generate(
+            **inputs,
+            max_new_tokens=self.max_new_tokens,
+            do_sample=False,
+            repetition_penalty=1.1,
+            no_repeat_ngram_size=4,
+            pad_token_id=self.tokenizer.eos_token_id,
+            eos_token_id=self.tokenizer.eos_token_id,
+        )
+        generated_ids = output_ids[0, input_length:]
+        answer = self.tokenizer.decode(
+            generated_ids, skip_special_tokens=True
+        ).strip()
 
-            generated_chunks: list[str] = []
-            while (
-                not first_token_event.is_set()
-                and generation_thread.is_alive()
-            ):
-                time.sleep(0.1)
-            for chunk in streamer:
-                if chunk:
-                    generated_chunks.append(chunk)
-
-            generation_thread.join()
-
-        logger.info("Model output received.")
-        answer = "".join(generated_chunks).strip()
         logger.info("Answer generated successfully.")
         return answer
 

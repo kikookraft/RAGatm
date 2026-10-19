@@ -59,18 +59,6 @@ def _load_dataset(dataset_path: str) -> RagDataset:
     return RagDataset.model_validate(dataset)
 
 
-def _extract_file_text(source: MinimalSource) -> str:
-    """Read the raw text covered by a source span."""
-    path = Path(source.file_path)
-    if not path.is_absolute():
-        path = Path.cwd() / path
-    with open(path, "r", encoding="utf-8") as handle:
-        text = handle.read()
-    start = max(0, source.first_character_index)
-    end = min(len(text), source.last_character_index)
-    return text[start:end]
-
-
 @lru_cache(maxsize=1)
 def _get_llm() -> Any:
     """Lazily import and cache the LLM wrapper.
@@ -224,7 +212,7 @@ class CLI:
             for source, _score in search_results:
                 minimal_sources.append(source)
                 try:
-                    sources.append(_extract_file_text(source))
+                    sources.append(source.get_source_text())
                 except Exception as exc:
                     logging.warning("Failed to read source %s: %s",
                                     source.file_path, exc)
@@ -233,9 +221,11 @@ class CLI:
             logging.info("Generated answer for query: %s", query)
             return {
                 "question": query,
-                "retrieved_sources": [source.model_dump(
-                    mode="json") for source in minimal_sources],
+                # "retrieved_sources": [
+                #     source.model_dump(mode="json") for source in minimal_sources
+                # ],
                 "answer": answer,
+                # "full_sources": sources,
             }
         except Exception as exc:
             logging.error("answer failed: %s", exc)
@@ -275,7 +265,7 @@ class CLI:
                 source_texts: list[str] = []
                 for source in result.retrieved_sources:
                     try:
-                        source_texts.append(_extract_file_text(source))
+                        source_texts.append(source.get_source_text())
                     except Exception as exc:
                         logging.warning("Skipping invalid source %s: %s",
                                         source.file_path, exc)
