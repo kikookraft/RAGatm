@@ -72,6 +72,15 @@ def _get_llm() -> Any:
     return loaded_llm
 
 
+def _format_source_context(source: MinimalSource, text: str) -> str:
+    """Format one retrieved chunk so the prompt keeps its provenance."""
+    return (
+        f"Source: {source.file_path}\n"
+        f"Span: {source.first_character_index}-{source.last_character_index}\n"
+        f"Content:\n{text.strip()}"
+    )
+
+
 @dataclass
 class CLI:
     """Fire command surface for the project."""
@@ -212,7 +221,8 @@ class CLI:
             for source, _score in search_results:
                 minimal_sources.append(source)
                 try:
-                    sources.append(source.get_source_text())
+                    source_text = source.get_source_text()
+                    sources.append(_format_source_context(source, source_text))
                 except Exception as exc:
                     logging.warning("Failed to read source %s: %s",
                                     source.file_path, exc)
@@ -265,7 +275,10 @@ class CLI:
                 source_texts: list[str] = []
                 for source in result.retrieved_sources:
                     try:
-                        source_texts.append(source.get_source_text())
+                        source_text = source.get_source_text()
+                        source_texts.append(
+                            _format_source_context(source, source_text)
+                        )
                     except Exception as exc:
                         logging.warning("Skipping invalid source %s: %s",
                                         source.file_path, exc)

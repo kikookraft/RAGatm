@@ -26,7 +26,7 @@ class LocalRAGModel:
     def __init__(
         self,
         model_name: str = "Qwen/Qwen3-0.6B",
-        max_new_tokens: int = 256,
+        max_new_tokens: int = 1024,
     ) -> None:
         """Initialize the local tokenizer and model.
 
