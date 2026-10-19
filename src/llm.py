@@ -8,6 +8,7 @@ progress in the terminal.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Iterable, Sequence, cast
 
 import torch
@@ -18,6 +19,10 @@ from transformers import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+_WORD_RE = re.compile(r"[A-Za-z0-9_]+")
+_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+|\n+")
 
 
 class LocalRAGModel:
@@ -64,21 +69,64 @@ class LocalRAGModel:
             pbar.update(1)
         logger.info("Model loaded successfully.")
 
+    @staticmethod
+    def _question_terms(question: str) -> set[str]:
+        terms = {
+            match.group(0).lower()
+            for match in _WORD_RE.finditer(question)
+        }
+        return {
+            term for term in terms
+            if len(term) > 2 and term not in {"how", "what", "when", "where", "why", "which", "load"}
+        }
+
+    @classmethod
+    def _select_relevant_text(cls, question: str, source: str) -> str:
+        """Keep only the most question-relevant sentences from a source."""
+        cleaned_source = source.strip()
+        if not cleaned_source:
+            return ""
+
+        question_terms = cls._question_terms(question)
+        if not question_terms:
+            return cleaned_source
+
+        selected_sentences: list[str] = []
+        for sentence in _SENTENCE_RE.split(cleaned_source):
+            normalized_sentence = sentence.strip()
+            if not normalized_sentence:
+                continue
+            lowered_sentence = normalized_sentence.lower()
+            if any(term in lowered_sentence for term in question_terms):
+                selected_sentences.append(normalized_sentence)
+
+        if selected_sentences:
+            return " ".join(selected_sentences[:4])
+
+        return cleaned_source
+
     def build_prompt(self, question: str, sources: Iterable[str]) -> str:
-        """Build the RAG prompt using only retrieved snippets as context."""
-        cleaned_sources = [
-            source.strip() for source in sources if source and source.strip()
-        ]
+        """Build a concise RAG prompt from the retrieved snippets."""
+        cleaned_sources = []
+        for source in sources:
+            if not source:
+                continue
+            relevant_text = self._select_relevant_text(question, source)
+            if relevant_text.strip():
+                cleaned_sources.append(relevant_text.strip())
+
         context = "\n\n---\n\n".join(cleaned_sources)
         if not context:
             context = "No relevant source context was provided."
 
         return (
-            "You answer questions using only the provided source context. "
-            "If the answer is not in the context, say so clearly. "
-            "Return plain text only."
+            "You answer questions using only the provided source evidence. "
+            "If the evidence contains the answer, state it directly and do "
+            "not say the answer is missing. If the evidence truly does not "
+            "contain the answer, say so clearly. Return plain text only."
             f"\n\nQuestion: {question}\n\n"
-            f"Relevant context:\n{context}"
+            f"Relevant context:\n{context}\n"
+            "Answer: "
         )
 
     def _build_inputs(self, prompt: str) -> dict[str, torch.Tensor]:
@@ -91,8 +139,10 @@ class LocalRAGModel:
                 {
                     "role": "system",
                     "content": (
-                        "You answer using only the provided source context. "
-                        "If the answer is not in the context, say so clearly. "
+                        "You answer using only the provided source evidence. "
+                        "If the evidence contains the answer, state it directly "
+                        "and do not say the answer is missing. If the evidence "
+                        "truly does not contain the answer, say so clearly. "
                         "Return plain text only."
                     ),
                 },
