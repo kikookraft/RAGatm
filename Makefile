@@ -14,6 +14,7 @@ ifneq ($(DETECTED_OS),Windows)
   export UV_CACHE_DIR     = /goinfre/$(USER)/RAG_cache
   export UV_PROJECT_ENVIRONMENT = /goinfre/$(USER)/RAG_venv
   export HF_HOME          = /goinfre/$(USER)/hf_cache
+  export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 endif
 unexport VIRTUAL_ENV
 
