@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 _WORD_RE = re.compile(r"[A-Za-z0-9_]+")
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+_LEADING_ANSWER_PREFIX_RE = re.compile(
+    r"^\s*(?:answer\s*[:\-]\s*|the answer is\s*[:\-]?\s*)",
+    re.IGNORECASE,
+)
 
 
 class LocalRAGModel:
@@ -123,11 +127,21 @@ class LocalRAGModel:
             "You answer questions using only the provided source evidence. "
             "If the evidence contains the answer, state it directly and do "
             "not say the answer is missing. If the evidence truly does not "
-            "contain the answer, say so clearly. Return plain text only."
+            "contain the answer, say so clearly. Start directly with the "
+            "substantive answer and return plain text only."
             f"\n\nQuestion: {question}\n\n"
             f"Relevant context:\n{context}\n"
-            "Answer: "
         )
+
+    @staticmethod
+    def _strip_answer_prefix(answer: str) -> str:
+        """Remove canned answer prefixes while preserving the content."""
+        cleaned_answer = answer.strip()
+        previous_answer = None
+        while cleaned_answer and cleaned_answer != previous_answer:
+            previous_answer = cleaned_answer
+            cleaned_answer = _LEADING_ANSWER_PREFIX_RE.sub("", cleaned_answer)
+        return cleaned_answer.strip()
 
     def _build_inputs(self, prompt: str) -> dict[str, torch.Tensor]:
         """Create model inputs, preferring the chat template when available."""
@@ -143,7 +157,8 @@ class LocalRAGModel:
                         "If the evidence contains the answer, state it directly "
                         "and do not say the answer is missing. If the evidence "
                         "truly does not contain the answer, say so clearly. "
-                        "Return plain text only."
+                        "Start directly with the substantive answer and return "
+                        "plain text only."
                     ),
                 },
                 {"role": "user", "content": prompt},
@@ -200,7 +215,8 @@ class LocalRAGModel:
         generated_ids = output_ids[0, input_length:]
         answer = self.tokenizer.decode(
             generated_ids, skip_special_tokens=True
-        ).strip()
+        )
+        answer = self._strip_answer_prefix(answer)
 
         logger.info("Answer generated successfully.")
         return answer
