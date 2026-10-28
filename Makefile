@@ -24,7 +24,7 @@ unexport VIRTUAL_ENV
 #   make search ARGS="'how to load a LoRA adapter' --k 10"
 #   make search_dataset ARGS="--dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json --k 10 --save_directory data/output/search_results/UnansweredQuestions"
 #   make answer ARGS="'how to load a LoRA adapter' --k 10"
-#   make answer_dataset ARGS="--dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json --k 10 --save_directory data/output/answer_results/UnansweredQuestions"
+#   make answer_dataset ARGS="--student_search_results_path data/output/search_results/UnansweredQuestions/dataset_docs_public.json --save_directory data/output/search_results_and_answer"
 #   make evaluate ARGS="--dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json --k 10 --save_directory data/output/evaluate_results/UnansweredQuestions"
 ARGS ?=
 
