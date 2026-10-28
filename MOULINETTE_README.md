@@ -6,15 +6,23 @@ Evaluation system for RAG submissions. Validates your search results and calcula
 
 
 
-## Installation
+## Usage
+
+
+
+This attachment ships precompiled standalone binaries (`moulinette-ubuntu`, `moulinette-fedora`). There is nothing to install and no Python environment to set up. Pick the binary for your OS, rename it to `moulinette`, and make it executable:
 
 
 
 ```bash
 
-uv venv && uv sync
+# Ubuntu / Debian:
+mv moulinette-ubuntu moulinette
+# Fedora:
+# mv moulinette-fedora moulinette
+chmod +x moulinette
 
-direnv allow  # or source .envrc
+./moulinette <command> [arguments]
 
 ```
 
@@ -33,7 +41,7 @@ Evaluate your search results against the ground truth dataset.
 
 ```bash
 
-uv run python -m moulinette evaluate_student_search_results \
+./moulinette evaluate_student_search_results \
 
     <student_results_path> \
 
@@ -68,7 +76,7 @@ uv run python -m moulinette evaluate_student_search_results \
 
 ```bash
 
-uv run python -m moulinette evaluate_student_search_results \
+./moulinette evaluate_student_search_results \
 
     ../data/output/search_results/dataset_code_public.json \
 
@@ -103,7 +111,7 @@ Evaluate your generated answers (not yet implemented).
 
 ```bash
 
-uv run python -m moulinette evaluate_student_answers <student_answer_path>
+./moulinette evaluate_student_answers <student_answer_path>
 
 ```
 
