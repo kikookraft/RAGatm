@@ -231,11 +231,10 @@ class CLI:
             logging.info("Generated answer for query: %s", query)
             return {
                 "question": query,
-                # "retrieved_sources": [
-                #     source.model_dump(mode="json") for source in minimal_sources
-                # ],
+                "retrieved_sources": [
+                    source.model_dump(mode="json") for source in minimal_sources
+                ],
                 "answer": answer,
-                # "full_sources": sources,
             }
         except Exception as exc:
             logging.error("answer failed: %s", exc)
