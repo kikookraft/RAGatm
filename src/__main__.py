@@ -59,12 +59,140 @@ def _load_dataset(dataset_path: str) -> RagDataset:
     return RagDataset.model_validate(dataset)
 
 
+def _compute_span_iou(left: MinimalSource, right: MinimalSource) -> float:
+    """Return the Intersection-over-Union of two source spans."""
+    if left.file_path != right.file_path:
+        return 0.0
+
+    start = max(left.first_character_index, right.first_character_index)
+    end = min(left.last_character_index, right.last_character_index)
+    overlap = max(0, end - start)
+    union_start = min(left.first_character_index, right.first_character_index)
+    union_end = max(left.last_character_index, right.last_character_index)
+    union = max(0, union_end - union_start)
+    if union <= 0:
+        return 0.0
+    return overlap / union
+
+
+def _source_matches_reference(
+    candidate: MinimalSource,
+    reference: MinimalSource,
+) -> bool:
+    """Check whether a candidate source covers the same file region."""
+    return (
+        candidate.file_path == reference.file_path
+        and _compute_span_iou(candidate, reference) >= 0.05
+    )
+
+
+def _compute_recall_for_question(
+    candidate_sources: list[MinimalSource],
+    reference_sources: list[MinimalSource],
+    limit: int,
+) -> float:
+    """Return recall@limit for a single question."""
+    if not reference_sources:
+        return 0.0
+    if limit <= 0:
+        return 0.0
+
+    matched: set[int] = set()
+    for reference_index, reference_source in enumerate(reference_sources):
+        for candidate in candidate_sources[:limit]:
+            if _source_matches_reference(candidate, reference_source):
+                matched.add(reference_index)
+                break
+    return len(matched) / len(reference_sources)
+
+
+def evaluate_student_search_results(
+    student_results: Any,
+    dataset: Any,
+    k: int = 10,
+) -> dict[str, Any]:
+    """Validate search results and compute recall metrics against a dataset."""
+    try:
+        payload = (
+            student_results
+            if isinstance(student_results, StudentSearchResults)
+            else StudentSearchResults.model_validate(student_results)
+        )
+    except Exception as exc:  # pragma: no cover - validation path
+        return {
+            "valid": False,
+            "error": f"student results are invalid: {exc}",
+            "dataset_metrics": {},
+            "per_question": {},
+        }
+
+    try:
+        dataset_payload = (
+            dataset
+            if isinstance(dataset, RagDataset)
+            else RagDataset.model_validate(dataset)
+        )
+    except Exception as exc:  # pragma: no cover - validation path
+        return {
+            "valid": False,
+            "error": f"dataset is invalid: {exc}",
+            "dataset_metrics": {},
+            "per_question": {},
+        }
+
+    metric_levels = (1, 3, 5, 10)
+    per_question: dict[str, dict[str, float]] = {}
+    question_scores: dict[str, list[float]] = {
+        f"Recall@{level}": [] for level in metric_levels
+    }
+
+    for question in dataset_payload.rag_questions:
+        expected_sources = list(question.sources)
+        result = next(
+            (
+                item for item in payload.search_results
+                if item.question_id == question.question_id
+            ),
+            None,
+        )
+        candidate_sources = (
+            list(result.retrieved_sources)
+            if result is not None
+            else []
+        )
+        question_metrics: dict[str, float] = {}
+        for level in metric_levels:
+            eval_limit = min(level, max(payload.k, k)) if payload.k > 0 else level
+            score = _compute_recall_for_question(
+                candidate_sources,
+                expected_sources,
+                eval_limit,
+            )
+            question_metrics[f"recall@{level}"] = score
+            question_scores[f"Recall@{level}"].append(score)
+        per_question[question.question_id] = question_metrics
+
+    dataset_metrics = {
+        f"Recall@{level}": (
+            sum(question_scores[f"Recall@{level}"]) / len(question_scores[f"Recall@{level}"])
+            if question_scores[f"Recall@{level}"]
+            else 0.0
+        )
+        for level in metric_levels
+    }
+
+    return {
+        "valid": True,
+        "error": None,
+        "dataset_metrics": dataset_metrics,
+        "per_question": per_question,
+        "n_questions": len(dataset_payload.rag_questions),
+    }
+
+
 @lru_cache(maxsize=1)
 def _get_llm() -> Any:
     """Lazily import and cache the LLM wrapper.
-
-    Importing transformers/torch at module import time slows down every
-    CLI command, including retrieval-only commands.
     """
     logging.info("Initializing LLM module...")
     from src.llm import llm as loaded_llm
@@ -312,11 +440,51 @@ class CLI:
         student_search_results_path: str,
         dataset_path: str,
         k: int = 10,
-    ) -> None:
-        _ = student_search_results_path
-        _ = dataset_path
-        _ = k
-        _missing_implementation("evaluate")
+    ) -> dict[str, Any] | None:
+        """Validate search results and print recall metrics for a dataset."""
+        try:
+            if not isinstance(student_search_results_path, str) or (
+                    not student_search_results_path.strip()):
+                raise ValueError(
+                    "student_search_results_path must be a non-empty string"
+                )
+            if not os.path.isfile(student_search_results_path):
+                raise FileNotFoundError(
+                    f"student search results file not found: "
+                    f"{student_search_results_path}"
+                )
+            if not isinstance(dataset_path, str) or not dataset_path.strip():
+                raise ValueError("dataset_path must be a non-empty string")
+            if not os.path.isfile(dataset_path):
+                raise FileNotFoundError(f"dataset file not found: {dataset_path}")
+            if not isinstance(k, int) or k <= 0:
+                raise ValueError("k must be a positive integer")
+
+            with open(student_search_results_path, "r", encoding="utf-8") as handle:
+                student_results = json.load(handle)
+            with open(dataset_path, "r", encoding="utf-8") as handle:
+                dataset = json.load(handle)
+
+            result = evaluate_student_search_results(student_results, dataset, k)
+            print(f"Student data is valid: {result['valid']}")
+            print("Evaluation Results")
+            print("========================================")
+            for level in (1, 3, 5, 10):
+                metric_name = f"Recall@{level}"
+                value = result["dataset_metrics"].get(metric_name, 0.0)
+                print(f"{metric_name}: {value:.3f}")
+            return result
+        except KeyboardInterrupt:
+            logging.warning("Evaluation interrupted.")
+            raise SystemExit(130) from None
+        except Exception as exc:  # pragma: no cover - CLI guard
+            logging.error("evaluation failed: %s", exc)
+            return {
+                "valid": False,
+                "error": str(exc),
+                "dataset_metrics": {},
+                "per_question": {},
+            }
 
 
 def main() -> None:

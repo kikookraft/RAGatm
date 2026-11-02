@@ -4,3 +4,5 @@ src/__pycache__/
 .venv/
 data/processed/
 **.pyc
+moulinette
+data/output/*

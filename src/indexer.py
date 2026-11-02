@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 #: The moulinette rejects any retrieved source longer than this many
 #: characters, so chunking must never produce wider chunks.
-#: -1 to disable the limit
+#: The subject uses a default max_chunk_size of 2000 characters.
 MAX_CONTEXT_LENGTH: int = 2000
 #: Default directory where the index is persisted.
 DEFAULT_INDEX_DIRECTORY: str = "data/processed"
@@ -60,7 +60,7 @@ def _validate_chunk_size(max_chunk_size: int) -> int:
             MAX_CONTEXT_LENGTH,
         )
         return MAX_CONTEXT_LENGTH
-    if MAX_CONTEXT_LENGTH > 0 and max_chunk_size < 20:
+    if max_chunk_size < 20:
         logger.warning(
             "max_chunk_size=%d is very small — this may produce too many "
             "chunks and slow down indexing.",
@@ -186,7 +186,7 @@ class Indexer:
     def __init__(
         self,
         directory: str,
-        max_chunk_size: int = MAX_CONTEXT_LENGTH,
+        max_chunk_size: int = 2000,
         index_directory: str = DEFAULT_INDEX_DIRECTORY,
     ) -> None:
         """Prepare an indexer for the corpus rooted at *directory*.
