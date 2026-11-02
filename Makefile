@@ -1,4 +1,4 @@
-.PHONY: install run debug clean lint lint-strict test
+.PHONY: install run debug clean lint lint-strict test help check validate
 .PHONY: index search search_dataset answer answer_dataset evaluate
 .PHONY: recall recall-docs recall-code subject-check moulinette
 
@@ -19,14 +19,20 @@ ifneq ($(DETECTED_OS),Windows)
 endif
 unexport VIRTUAL_ENV
 
-# Arguments for run
-# Usage examples:
+# Show the common commands for this project.
+# Examples:
+#   make help
+#   make install
 #   make index ARGS="--max_chunk_size 2000"
 #   make search ARGS="'how to load a LoRA adapter' --k 10"
 #   make search_dataset ARGS="--dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json --k 10 --save_directory data/output/search_results/UnansweredQuestions"
 #   make answer ARGS="'how to load a LoRA adapter' --k 10"
 #   make answer_dataset ARGS="--student_search_results_path data/output/search_results/UnansweredQuestions/dataset_docs_public.json --save_directory data/output/search_results_and_answer"
 #   make evaluate ARGS="--dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json --k 10 --save_directory data/output/evaluate_results/UnansweredQuestions"
+#   make recall-docs
+#   make recall-code
+#   make subject-check
+#   make check
 ARGS ?=
 DATASET_DOCS ?= data/datasets/UnansweredQuestions/dataset_docs_public.json
 DATASET_CODE ?= data/datasets/UnansweredQuestions/dataset_code_public.json
@@ -89,6 +95,25 @@ recall-code: moulinette
 recall: recall-docs
 
 subject-check: recall-docs recall-code
+
+check: lint test
+	@echo "Running full recall validation against the official subject datasets..."
+	$(MAKE) subject-check
+
+validate: check
+
+help:
+	@echo "Common commands:"
+	@echo "  make install"
+	@echo "  make index ARGS='--max_chunk_size 2000'"
+	@echo "  make search ARGS='\"how to load a LoRA adapter\" --k 10'"
+	@echo "  make search_dataset ARGS='--dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json --k 10 --save_directory data/output/search_results/UnansweredQuestions'"
+	@echo "  make recall-docs"
+	@echo "  make recall-code"
+	@echo "  make subject-check"
+	@echo "  make check"
+	@echo "  make lint"
+	@echo "  make test"
 
 # Other targets
 debug:
