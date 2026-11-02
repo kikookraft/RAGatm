@@ -21,10 +21,31 @@ _COLOR_RESET = "\033[0m"
 class BaseChunker(ABC):
     """Abstract chunker: turns file content into a list of MinimalSource."""
 
-    def __init__(self, max_chunk_size: int) -> None:
+    def __init__(
+        self,
+        max_chunk_size: int,
+        *,
+        target_chunk_size: int | None = None,
+        min_chunk_size: int | None = None,
+    ) -> None:
         if max_chunk_size <= 0:
             raise ValueError("max_chunk_size must be a positive integer")
         self.max_chunk_size: int = max_chunk_size
+        self.target_chunk_size: int = min(
+            max_chunk_size,
+            target_chunk_size if target_chunk_size is not None
+            else max_chunk_size,
+        )
+        default_min = max(200, self.target_chunk_size // 2)
+        self.min_chunk_size: int = max(
+            200,
+            min(self.max_chunk_size,
+                min_chunk_size if min_chunk_size is not None else default_min),
+        )
+
+    def effective_limit(self) -> int:
+        """Return the chunk-size limit used by this file-type strategy."""
+        return min(self.max_chunk_size, self.target_chunk_size)
 
     @abstractmethod
     def chunk(self, file_path: str, data: str) -> List[MinimalSource]:
@@ -130,8 +151,18 @@ class PythonChunker(BaseChunker):
     Split by lines if a single node exceeds *max_chunk_size*.
     """
 
+    def __init__(self, max_chunk_size: int, *,
+                 file_path: str | None = None) -> None:
+        super().__init__(
+            max_chunk_size,
+            target_chunk_size=min(max_chunk_size, 1200),
+            min_chunk_size=max(300, min(max_chunk_size, 600)),
+        )
+        self.file_path = file_path
+
     def chunk(self, file_path: str, data: str) -> List[MinimalSource]:
         sources: List[MinimalSource] = []
+        limit = self.effective_limit()
 
         # fallback for unparseable files
         try:
@@ -142,7 +173,7 @@ class PythonChunker(BaseChunker):
                 f"back to line splitting{_COLOR_RESET}"
             )
             for start, end in self._split_by_lines(
-                data, 0, self.max_chunk_size
+                data, 0, limit
             ):
                 self._emit(sources, file_path, data[start:end], start, end)
             return sources
@@ -163,7 +194,7 @@ class PythonChunker(BaseChunker):
             if not seg_text.strip():
                 continue
 
-            if len(seg_text) <= self.max_chunk_size:
+            if len(seg_text) <= limit:
                 raw_segments.append((node_start, node_end, seg_text))
             else:
                 logger.debug(
@@ -173,7 +204,7 @@ class PythonChunker(BaseChunker):
                     len(seg_text),
                 )
                 for s, e in self._split_by_lines(
-                    seg_text, node_start, self.max_chunk_size
+                    seg_text, node_start, limit
                 ):
                     raw_segments.append((s, e, data[s:e]))
 
@@ -202,7 +233,7 @@ class PythonChunker(BaseChunker):
         current_end: int = segments[0][1]
 
         for seg_start, seg_end, _seg_text in segments[1:]:
-            if (seg_end - current_start) <= self.max_chunk_size:
+            if (seg_end - current_start) <= limit:
                 current_end = seg_end
             else:
                 self._emit(
@@ -231,41 +262,49 @@ class TextChunker(BaseChunker):
     Split first by double newlines, then by punctuation, then by single spaces.
     """
 
+    def __init__(self, max_chunk_size: int) -> None:
+        super().__init__(
+            max_chunk_size,
+            target_chunk_size=min(max_chunk_size, 1500),
+            min_chunk_size=max(300, min(max_chunk_size, 600)),
+        )
+
     def chunk(self, file_path: str, data: str) -> List[MinimalSource]:
         sources: List[MinimalSource] = []
         remaining = data
         cursor = 0  # absolute character offset within *data*
+        limit = self.effective_limit()
 
         while remaining:
-            if len(remaining) <= self.max_chunk_size:
+            if len(remaining) <= limit:
                 self._emit(
                     sources, file_path, remaining, cursor,
                     cursor + len(remaining)
                 )
                 break
 
-            cut = remaining.rfind("\n\n", 0, self.max_chunk_size)
+            cut = remaining.rfind("\n\n", 0, limit)
             if cut != -1:
                 cut += 2  # include both newlines
             else:
                 cut = -1
                 for punct in (". ", "? ", "! ", ".\n", "?\n", "!\n", ":\n"):
-                    pos = remaining.rfind(punct, 0, self.max_chunk_size)
+                    pos = remaining.rfind(punct, 0, limit)
                     if pos != -1:
                         cut = max(cut, pos + len(punct))
 
             if cut == -1:
-                cut = remaining.rfind(" ", 0, self.max_chunk_size)
+                cut = remaining.rfind(" ", 0, limit)
 
             if cut <= 0:
                 # A boundary at offset 0 (or no boundary at all) would
                 # produce an empty chunk and the cursor would never
                 # advance — fall back to a hard cut at max_size.
-                cut = self.max_chunk_size
+                cut = limit
 
             # A punctuation match ending exactly at the limit can push the
             # cut past max_size; clamp so no chunk ever exceeds it.
-            cut = min(cut, self.max_chunk_size)
+            cut = min(cut, limit)
 
             self._emit(
                 sources,
@@ -301,9 +340,17 @@ class PlainTextChunker(BaseChunker):
     splits for very long lines.
     """
 
+    def __init__(self, max_chunk_size: int) -> None:
+        super().__init__(
+            max_chunk_size,
+            target_chunk_size=min(max_chunk_size, 1000),
+            min_chunk_size=max(250, min(max_chunk_size, 400)),
+        )
+
     def chunk(self, file_path: str, data: str) -> List[MinimalSource]:
         sources: List[MinimalSource] = []
-        for start, end in self._split_by_lines(data, 0, self.max_chunk_size):
+        limit = self.effective_limit()
+        for start, end in self._split_by_lines(data, 0, limit):
             self._emit(sources, file_path, data[start:end], start, end)
         return sources
 

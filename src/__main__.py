@@ -17,6 +17,7 @@ from tqdm import tqdm
 from src.indexer import Indexer
 from src.logging_config import configure_logging
 from src.models import (
+    AnsweredQuestion,
     MinimalAnswer,
     MinimalSearchResults,
     MinimalSource,
@@ -147,6 +148,9 @@ def evaluate_student_search_results(
     }
 
     for question in dataset_payload.rag_questions:
+        if not isinstance(question, AnsweredQuestion):
+            continue
+
         expected_sources = list(question.sources)
         result = next(
             (
@@ -162,7 +166,8 @@ def evaluate_student_search_results(
         )
         question_metrics: dict[str, float] = {}
         for level in metric_levels:
-            eval_limit = min(level, max(payload.k, k)) if payload.k > 0 else level
+            eval_limit = min(level, max(payload.k, k)
+                             ) if payload.k > 0 else level
             score = _compute_recall_for_question(
                 candidate_sources,
                 expected_sources,
@@ -174,7 +179,8 @@ def evaluate_student_search_results(
 
     dataset_metrics = {
         f"Recall@{level}": (
-            sum(question_scores[f"Recall@{level}"]) / len(question_scores[f"Recall@{level}"])
+            sum(question_scores[f"Recall@{level}"]) / len(
+                question_scores[f"Recall@{level}"])
             if question_scores[f"Recall@{level}"]
             else 0.0
         )
@@ -456,16 +462,20 @@ class CLI:
             if not isinstance(dataset_path, str) or not dataset_path.strip():
                 raise ValueError("dataset_path must be a non-empty string")
             if not os.path.isfile(dataset_path):
-                raise FileNotFoundError(f"dataset file not found: {dataset_path}")
+                raise FileNotFoundError(
+                    f"dataset file not found: {dataset_path}")
             if not isinstance(k, int) or k <= 0:
                 raise ValueError("k must be a positive integer")
 
-            with open(student_search_results_path, "r", encoding="utf-8") as handle:
+            with open(
+                    student_search_results_path, "r",
+                    encoding="utf-8") as handle:
                 student_results = json.load(handle)
             with open(dataset_path, "r", encoding="utf-8") as handle:
                 dataset = json.load(handle)
 
-            result = evaluate_student_search_results(student_results, dataset, k)
+            result = evaluate_student_search_results(student_results,
+                                                     dataset, k)
             print(f"Student data is valid: {result['valid']}")
             print("Evaluation Results")
             print("========================================")
