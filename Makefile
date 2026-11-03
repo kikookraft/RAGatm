@@ -2,20 +2,17 @@
 .PHONY: index search search_dataset answer answer_dataset evaluate
 .PHONY: recall recall-docs recall-code subject-check moulinette
 
-# --- OS detection ---
-ifeq ($(OS),Windows_NT)
-  DETECTED_OS := Windows
-else
-  DETECTED_OS := $(shell uname -s)
-endif
 
 # On Linux/macOS, use /goinfre paths to save disk space.
 # On Windows, skip these exports (no /goinfre mount).
-ifneq ($(DETECTED_OS),Windows)
-  export UV_CACHE_DIR     = /goinfre/$(USER)/RAG_cache
-  export UV_PROJECT_ENVIRONMENT = /goinfre/$(USER)/RAG_venv
-  export HF_HOME          = /goinfre/$(USER)/hf_cache
-  export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+ifdef CACHE_DIR
+	export UV_CACHE_DIR=$(CACHE_DIR)/uv_cache
+	export UV_PROJECT_ENVIRONMENT=$(CACHE_DIR)/venv
+	export HF_HOME=$(CACHE_DIR)/hf_cache
+else
+	export UV_CACHE_DIR = /goinfre/$(USER)/RAG_cache
+	export UV_PROJECT_ENVIRONMENT = /goinfre/$(USER)/RAG_venv
+	export HF_HOME = /goinfre/$(USER)/hf_cache
 endif
 unexport VIRTUAL_ENV
 
@@ -33,6 +30,10 @@ unexport VIRTUAL_ENV
 #   make recall-code
 #   make subject-check
 #   make check
+
+# docker run -it --rm -v .:/app -w /app -v ragcache:/cache -e CACHE_DIR=/cache --gpus all ghcr.io/astral-sh/uv:debian make search ARGS="'how to load a LoRA adapter' --k 10"
+
+
 ARGS ?=
 DATASET_DOCS ?= data/datasets/UnansweredQuestions/dataset_docs_public.json
 DATASET_CODE ?= data/datasets/UnansweredQuestions/dataset_code_public.json
@@ -42,14 +43,9 @@ SEARCH_OUT_DOCS ?= data/output/search_results/UnansweredQuestions
 SEARCH_OUT_CODE ?= data/output/search_results/UnansweredQuestions
 MOUSETTE_BIN ?= $(firstword $(wildcard moulinette) $(wildcard moulinette-ubuntu) $(wildcard moulinette-fedora))
 
-ifeq ($(DETECTED_OS),Windows)
 install:
-	uv pip install -e .
-else
-install:
-	test -d $(UV_PROJECT_ENVIRONMENT) || uv venv $(UV_PROJECT_ENVIRONMENT)
-	VIRTUAL_ENV=$(UV_PROJECT_ENVIRONMENT) uv pip install -e .
-endif
+	uv sync
+
 
 moulinette:
 	@if [ -x moulinette-ubuntu ]; then ln -sf moulinette-ubuntu moulinette; fi
