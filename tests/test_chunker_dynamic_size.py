@@ -18,7 +18,8 @@ def test_chunker_factory_uses_file_type_targets() -> None:
 
 
 def test_python_chunker_respects_dynamic_target_limit() -> None:
-    data = "def demo():\n" + "\n".join(f"value_{index} = {index}" for index in range(400))
+    data = "def demo():\n" + "\n".join(
+        f"value_{index} = {index}" for index in range(400))
     chunker = PythonChunker(2000)
 
     chunks = chunker.chunk("demo.py", data)
