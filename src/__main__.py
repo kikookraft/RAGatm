@@ -29,13 +29,6 @@ from src.models import (
 configure_logging(level=logging.INFO)
 
 
-def _missing_implementation(command_name: str) -> None:
-    raise NotImplementedError(
-        f"The '{command_name}' command is not implemented yet. "
-        "Hook it up to the pipeline modules before running the CLI."
-    )
-
-
 def _read_json(path: str) -> Any:
     """Read and parse JSON from disk while handling malformed inputs."""
     with open(path, "r", encoding="utf-8") as file:

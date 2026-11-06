@@ -56,17 +56,11 @@ class BaseChunker(ABC):
     @staticmethod
     def _build_source(
         file_path: str,
-        text: str,
         start_char: int,
         end_char: int,
     ) -> Optional[MinimalSource]:
-        """Factory for a single MinimalSource with consistent semantics.
-
-        *start_char* is inclusive, *end_char* is exclusive.
-
-        Returns ``None`` when the span is empty or reversed, so that a
-        degenerate boundary can never produce a source that
-        :class:`MinimalSource` rejects.
+        """Create MinimalSource for a span,
+        or return None if the span is empty.
         """
         if end_char <= start_char:
             logger.debug(
@@ -86,16 +80,12 @@ class BaseChunker(ABC):
         self,
         sources: List[MinimalSource],
         file_path: str,
-        text: str,
         start_char: int,
         end_char: int,
     ) -> None:
         """Append the source for a span to *sources*, skipping empty ones.
-
-        Thin wrapper around :meth:`_build_source` for call sites inside a
-        loop, where an empty span should be dropped rather than handled.
         """
-        source = self._build_source(file_path, text, start_char, end_char)
+        source = self._build_source(file_path, start_char, end_char)
         if source is not None:
             sources.append(source)
 
@@ -175,7 +165,7 @@ class PythonChunker(BaseChunker):
             for start, end in self._split_by_lines(
                 data, 0, limit
             ):
-                self._emit(sources, file_path, data[start:end], start, end)
+                self._emit(sources, file_path, start, end)
             return sources
 
         # collect (start, end, text) tuples, then sort by start offset
@@ -239,7 +229,6 @@ class PythonChunker(BaseChunker):
                 self._emit(
                     sources,
                     file_path,
-                    data[current_start:current_end],
                     current_start,
                     current_end,
                 )
@@ -249,7 +238,6 @@ class PythonChunker(BaseChunker):
         self._emit(
             sources,
             file_path,
-            data[current_start:current_end],
             current_start,
             current_end,
         )
@@ -278,7 +266,7 @@ class TextChunker(BaseChunker):
         while remaining:
             if len(remaining) <= limit:
                 self._emit(
-                    sources, file_path, remaining, cursor,
+                    sources, file_path, cursor,
                     cursor + len(remaining)
                 )
                 break
@@ -309,7 +297,6 @@ class TextChunker(BaseChunker):
             self._emit(
                 sources,
                 file_path,
-                remaining[:cut],
                 cursor,
                 cursor + cut,
             )
@@ -351,7 +338,7 @@ class PlainTextChunker(BaseChunker):
         sources: List[MinimalSource] = []
         limit = self.effective_limit()
         for start, end in self._split_by_lines(data, 0, limit):
-            self._emit(sources, file_path, data[start:end], start, end)
+            self._emit(sources, file_path, start, end)
         return sources
 
 
