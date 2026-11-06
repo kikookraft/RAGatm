@@ -36,7 +36,7 @@ class LocalRAGModel:
     def __init__(
         self,
         model_name: str = "Qwen/Qwen3-0.6B",
-        max_new_tokens: int = 1024,
+        max_new_tokens: int = 512,
         load_timeout: float | None = None,
     ) -> None:
         """Initialize the local tokenizer and model.
@@ -141,6 +141,7 @@ class LocalRAGModel:
             "not say the answer is missing. If the evidence truly does not "
             "contain the answer, say so clearly. Start directly with the "
             "substantive answer and return plain text only."
+            "Answer must be short, and be less than 3 setence."
             f"\n\nQuestion: {question}\n\n"
             f"Relevant context:\n{context}\n"
         )
