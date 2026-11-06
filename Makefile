@@ -22,6 +22,8 @@ GROUND_TRUTH_DOCS ?= data/datasets/AnsweredQuestions/dataset_docs_public.json
 GROUND_TRUTH_CODE ?= data/datasets/AnsweredQuestions/dataset_code_public.json
 SEARCH_OUT_DOCS ?= data/output/search_results/UnansweredQuestions
 SEARCH_OUT_CODE ?= data/output/search_results/UnansweredQuestions
+SEARCH_RESULT_DOCS_FILE ?= $(SEARCH_OUT_DOCS)/$(notdir $(DATASET_DOCS))
+SEARCH_RESULT_CODE_FILE ?= $(SEARCH_OUT_CODE)/$(notdir $(DATASET_CODE))
 MOULI_BIN ?= $(firstword $(wildcard moulinette-ubuntu))
 
 
@@ -83,12 +85,12 @@ evaluate:
 recall-docs: moulinette
 	@uv run python -m src index --max_chunk_size 2000
 	@uv run python -m src search_dataset --dataset_path $(DATASET_DOCS) --k 10 --save_directory $(SEARCH_OUT_DOCS)
-	@./moulinette evaluate_student_search_results $(SEARCH_OUT_DOCS)/dataset_docs_public.json $(GROUND_TRUTH_DOCS) --k 10 --max_context_length 2000
+	@./moulinette evaluate_student_search_results $(SEARCH_RESULT_DOCS_FILE) $(GROUND_TRUTH_DOCS) --k 10 --max_context_length 2000
 
 recall-code: moulinette
 	@uv run python -m src index --max_chunk_size 2000
 	@uv run python -m src search_dataset --dataset_path $(DATASET_CODE) --k 10 --save_directory $(SEARCH_OUT_CODE)
-	@./moulinette evaluate_student_search_results $(SEARCH_OUT_CODE)/dataset_code_public.json $(GROUND_TRUTH_CODE) --k 10 --max_context_length 2000
+	@./moulinette evaluate_student_search_results $(SEARCH_RESULT_CODE_FILE) $(GROUND_TRUTH_CODE) --k 10 --max_context_length 2000
 
 recall: recall-docs recall-code
 
