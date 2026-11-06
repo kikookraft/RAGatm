@@ -6,3 +6,4 @@ data/processed/
 **.pyc
 moulinette
 data/output/*
+test/*
