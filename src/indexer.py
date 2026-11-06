@@ -1,183 +1,29 @@
-"""Indexing pipeline: chunk the corpus and build a persisted BM25 index.
-
-The :class:`Indexer` walks the raw corpus, splits every file into chunks
-no wider than ``max_chunk_size`` characters, and builds a BM25 lexical
-index (https://github.com/xhluca/bm25s) that can be persisted under
-``data/processed/`` and queried in milliseconds.
-"""
-
 from __future__ import annotations
-
 import json
 import logging
 import os
-from typing import Dict, List, Optional, Tuple
-
+from typing import List, Optional, Tuple
 import bm25s
 import Stemmer
-from tqdm import tqdm
-
-from src.chunker import _COLOR_RED, _COLOR_RESET, BaseChunker, ChunkerFactory
-from src.files_crawler import discovery
+from src.chunker import (ChunkCollector, validate_chunk_size,
+                         validate_directory)
 from src.models import MinimalSource
 
 logger = logging.getLogger(__name__)
 
-#: The moulinette rejects any retrieved source longer than this many
-#: characters, so chunking must never produce wider chunks.
-#: The subject uses a default max_chunk_size of 2000 characters.
+
 MAX_CONTEXT_LENGTH: int = 2000
-#: Default directory where the index is persisted.
 DEFAULT_INDEX_DIRECTORY: str = "data/processed"
-#: Default directory of the raw corpus.
 DEFAULT_CORPUS_DIRECTORY: str = "data/raw"
-#: Default number of results returned by a search.
 DEFAULT_K: int = 10
-
-
-def _validate_directory(directory: str) -> None:
-    """Raise ``ValueError`` unless *directory* is an existing folder."""
-    if not isinstance(directory, str) or not directory.strip():
-        raise ValueError("directory must be a non-empty string")
-    if not os.path.isdir(directory):
-        raise ValueError(f"directory does not exist: {directory}")
-
-
-def _validate_chunk_size(max_chunk_size: int) -> int:
-    """Validate *max_chunk_size* and clamp it to ``MAX_CONTEXT_LENGTH``.
-
-    Raises:
-        ValueError: If *max_chunk_size* is not a positive integer.
-    """
-    if not isinstance(max_chunk_size, int) or max_chunk_size <= 0:
-        raise ValueError("max_chunk_size must be a positive integer")
-    if MAX_CONTEXT_LENGTH > 0 and max_chunk_size > MAX_CONTEXT_LENGTH:
-        logger.warning(
-            "max_chunk_size=%d exceeds the moulinette limit of %d — "
-            "clamping to %d.",
-            max_chunk_size,
-            MAX_CONTEXT_LENGTH,
-            MAX_CONTEXT_LENGTH,
-        )
-        return MAX_CONTEXT_LENGTH
-    if max_chunk_size < 20:
-        logger.warning(
-            "max_chunk_size=%d is very small — this may produce too many "
-            "chunks and slow down indexing.",
-            max_chunk_size,
-        )
-    return max_chunk_size
 
 
 def _validate_k(k: int) -> int:
     """Validate *k*, treating invalid or negative values as ``0``."""
-    if not isinstance(k, int) or k < 0:
+    if k < 0:
         logger.warning("Invalid k=%r — falling back to k=0.", k)
         return 0
     return k
-
-
-class ChunkCollector:
-    """Walk a directory and collect chunk spans for every indexable file."""
-
-    def __init__(self, directory: str, max_chunk_size: int) -> None:
-        """Prepare an empty collection for *directory*.
-
-        Raises:
-            ValueError: If *directory* does not exist or *max_chunk_size*
-                is not a positive integer.
-        """
-        _validate_directory(directory)
-        self.directory: str = directory
-        self.max_chunk_size: int = _validate_chunk_size(max_chunk_size)
-        self.chunks: List[MinimalSource] = []
-        self._text_cache: Dict[str, str] = {}
-
-    def add_chunk(self, chunk: MinimalSource) -> None:
-        """Append an already-built chunk to the collection."""
-        self.chunks.append(chunk)
-
-    def get_chunks(self) -> List[MinimalSource]:
-        """Return all collected chunks."""
-        return self.chunks
-
-    def _read_file(self, file_path: str) -> Optional[str]:
-        """Read *file_path* as UTF-8, caching its text.
-
-        Returns:
-            The file content, or ``None`` if it cannot be read.
-        """
-        if file_path in self._text_cache:
-            return self._text_cache[file_path]
-        try:
-            with open(file_path, "r", encoding="utf-8") as file:
-                text: str = file.read()
-        except (OSError, UnicodeDecodeError) as exc:
-            tqdm.write(
-                f"{_COLOR_RED}Skipping {file_path}: {exc}{_COLOR_RESET}"
-            )
-            return None
-        self._text_cache[file_path] = text
-        return text
-
-    def collect_chunks(self) -> None:
-        """Chunk every discoverable file and store the resulting spans."""
-        self.chunks = []
-        self._text_cache = {}
-        try:
-            for file_path in tqdm(
-                discovery(self.directory),
-                desc="Collecting chunks",
-                unit="file",
-                colour="cyan",
-            ):
-                text = self._read_file(file_path)
-                if text is None:
-                    continue
-                try:
-                    chunker: BaseChunker = ChunkerFactory.get_chunker(
-                        file_path, self.max_chunk_size
-                    )
-                    for chunk in chunker.chunk(file_path, text):
-                        self.add_chunk(chunk)
-                except Exception as exc:  # one bad file must not kill the run
-                    tqdm.write(
-                        f"{_COLOR_RED}Error chunking {file_path}: "
-                        f"{exc}{_COLOR_RESET}"
-                    )
-        except KeyboardInterrupt:
-            self.chunks = []
-            self._text_cache = {}
-            logger.info("Chunk collection cancelled.")
-            raise
-
-    def fetch_chunk_text(self, chunk: MinimalSource) -> str:
-        """Return the text covered by *chunk*, from cache when possible."""
-        cached = self._text_cache.get(chunk.file_path)
-        if cached is not None:
-            return cached[
-                chunk.first_character_index:chunk.last_character_index
-            ]
-        try:
-            return chunk.get_source_text()
-        except Exception as exc:
-            tqdm.write(
-                f"{_COLOR_RED}Error fetching text for {chunk.file_path}: "
-                f"{exc}{_COLOR_RESET}"
-            )
-            return ""
-
-    def fetch_all(self) -> List[str]:
-        """Return the text of every chunk, in collection order."""
-        return [
-            self.fetch_chunk_text(chunk)
-            for chunk in tqdm(
-                self.chunks,
-                desc="Fetching chunk texts",
-                unit="chunk",
-                colour="green",
-            )
-        ]
 
 
 class Indexer:
@@ -190,14 +36,10 @@ class Indexer:
         index_directory: str = DEFAULT_INDEX_DIRECTORY,
     ) -> None:
         """Prepare an indexer for the corpus rooted at *directory*.
-
-        Raises:
-            ValueError: If *directory* does not exist or *max_chunk_size*
-                is not a positive integer.
         """
-        _validate_directory(directory)
+        validate_directory(directory)
         self.directory: str = directory
-        self.max_chunk_size: int = _validate_chunk_size(max_chunk_size)
+        self.max_chunk_size: int = validate_chunk_size(max_chunk_size)
         self.index_directory: str = index_directory
         self.chunk_collector: ChunkCollector = ChunkCollector(
             directory, self.max_chunk_size
@@ -208,9 +50,7 @@ class Indexer:
 
     def build_index(self) -> int:
         """Chunk the corpus, tokenize it, and fit the BM25 model.
-
-        Returns:
-            The number of indexed chunks.
+        Returns: The number of indexed chunks.
         """
         logger.info("Collecting and tokenizing the corpus...")
         self._is_indexed = False
@@ -273,10 +113,9 @@ class Indexer:
 
     def save(self, index_directory: Optional[str] = None) -> str:
         """Persist the BM25 index and chunk metadata under a directory.
-
-        Returns:
-            The directory the index was written to.
-
+        If *index_directory* is not provided, the default directory
+        specified at initialization is used.
+        Returns: The path to the directory where the index was saved.
         Raises:
             RuntimeError: If no complete index has been built yet.
         """

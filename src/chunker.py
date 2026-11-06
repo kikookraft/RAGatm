@@ -1,13 +1,11 @@
 from __future__ import annotations
-
 import ast
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
-
+from typing import Dict, List, Optional, Tuple
 from tqdm import tqdm
-
+from src.files_crawler import discovery
 from src.models import MinimalSource
 
 logger = logging.getLogger(__name__)
@@ -17,6 +15,51 @@ _COLOR_RED = "\033[91m"
 _COLOR_YELLOW = "\033[93m"
 _COLOR_RESET = "\033[0m"
 
+MAX_CONTEXT_LENGTH: int = 2000
+
+# File extensions that map to each chunker strategy
+_PYTHON_EXTENSIONS: frozenset[str] = frozenset({".py", ".pyw", ".pyx", ".pxd"})
+_TEXT_EXTENSIONS: frozenset[str] = frozenset(
+    {".md", ".markdown", ".rst", ".txt",
+     ".cfg", ".ini", ".toml", ".yaml", ".yml"}
+)
+# Source/config files worth indexing with the plain-text fallback
+_CODE_EXTENSIONS: frozenset[str] = frozenset(
+    {".c", ".h", ".cpp", ".cc", ".hpp", ".cu", ".cuh",
+     ".sh", ".bash", ".cmake", ".json"}
+)
+
+
+def validate_directory(directory: str) -> None:
+    """Raise ``ValueError`` unless *directory* is an existing folder."""
+    if not directory.strip():
+        raise ValueError("directory must be a non-empty string")
+    if not os.path.isdir(directory):
+        raise ValueError(f"directory does not exist: {directory}")
+
+
+def validate_chunk_size(max_chunk_size: int) -> int:
+    """Validate *max_chunk_size* and clamp it to ``MAX_CONTEXT_LENGTH``.
+    """
+    if max_chunk_size <= 0:
+        raise ValueError("max_chunk_size must be a positive integer")
+    if MAX_CONTEXT_LENGTH > 0 and max_chunk_size > MAX_CONTEXT_LENGTH:
+        logger.warning(
+            "max_chunk_size=%d exceeds the moulinette limit of %d — "
+            "clamping to %d.",
+            max_chunk_size,
+            MAX_CONTEXT_LENGTH,
+            MAX_CONTEXT_LENGTH,
+        )
+        return MAX_CONTEXT_LENGTH
+    if max_chunk_size < 20:
+        logger.warning(
+            "max_chunk_size=%d is very small — this may produce too many "
+            "chunks and slow down indexing.",
+            max_chunk_size,
+        )
+    return max_chunk_size
+
 
 class BaseChunker(ABC):
     """Abstract chunker: turns file content into a list of MinimalSource."""
@@ -24,7 +67,6 @@ class BaseChunker(ABC):
     def __init__(
         self,
         max_chunk_size: int,
-        *,
         target_chunk_size: int | None = None,
         min_chunk_size: int | None = None,
     ) -> None:
@@ -109,7 +151,7 @@ class BaseChunker(ABC):
     ) -> List[Tuple[int, int]]:
         """Split *data* into ``(start, end)`` byte-offset pairs at line
         boundaries, each no longer than *max_size*.
-        fallback strategy used when a single AST node exceeds
+        This is the fallback strategy used when a single AST node exceeds
         ``max_chunk_size``.
         """
         spans: List[Tuple[int, int]] = []
@@ -120,19 +162,14 @@ class BaseChunker(ABC):
             if len(remaining) <= max_size:
                 spans.append((cursor, cursor + len(remaining)))
                 break
-
-            # Try to cut at the last newline within the limit
             cut = remaining.rfind("\n", 0, max_size)
-            if cut == -1:
-                # No newline found — cut at max_size (hard split)
+            if cut == -1:  # if no newline found, hard cut at max_size
                 cut = max_size
             else:
                 cut += 1  # include the newline in the current chunk
-
             spans.append((cursor, cursor + cut))
             cursor += cut
             remaining = remaining[cut:]
-
         return spans
 
 
@@ -141,7 +178,8 @@ class PythonChunker(BaseChunker):
     Split by lines if a single node exceeds *max_chunk_size*.
     """
 
-    def __init__(self, max_chunk_size: int, *,
+    def __init__(self,
+                 max_chunk_size: int,
                  file_path: str | None = None) -> None:
         super().__init__(
             max_chunk_size,
@@ -154,10 +192,9 @@ class PythonChunker(BaseChunker):
         sources: List[MinimalSource] = []
         limit = self.effective_limit()
 
-        # fallback for unparseable files
         try:
             tree = ast.parse(data)
-        except SyntaxError:
+        except SyntaxError:  # fallback for unparseable files
             tqdm.write(
                 f"{_COLOR_YELLOW}Syntax error in {file_path} — falling "
                 f"back to line splitting{_COLOR_RESET}"
@@ -171,8 +208,6 @@ class PythonChunker(BaseChunker):
         # collect (start, end, text) tuples, then sort by start offset
         raw_segments: List[Tuple[int, int, str]] = []
         for node in tree.body:
-            # Use AST line/col offsets instead of data.index(seg_text):
-            # index() would map duplicated snippets to the wrong offsets.
             node_start = self._absolute_offset(data, node.lineno,
                                                node.col_offset)
             node_end = self._absolute_offset(
@@ -201,9 +236,7 @@ class PythonChunker(BaseChunker):
         if not raw_segments:
             return sources
 
-        # Sort by start offset and remove overlaps (keep the first segment
-        # that covers a region; later segments that fall inside an
-        # already-covered range are dropped).
+        # Sort by start offset and remove overlaps
         raw_segments.sort(key=lambda seg: seg[0])
         segments: List[Tuple[int, int, str]] = []
         covered_until = 0
@@ -284,15 +317,10 @@ class TextChunker(BaseChunker):
             if cut == -1:
                 cut = remaining.rfind(" ", 0, limit)
 
-            if cut <= 0:
-                # A boundary at offset 0 (or no boundary at all) would
-                # produce an empty chunk and the cursor would never
-                # advance — fall back to a hard cut at max_size.
+            if cut <= 0:  # no suitable split point found; hard cut at limit
                 cut = limit
 
-            # A punctuation match ending exactly at the limit can push the
-            # cut past max_size; clamp so no chunk ever exceeds it.
-            cut = min(cut, limit)
+            cut = min(cut, limit)  # force cut to not exceed limit
 
             self._emit(
                 sources,
@@ -304,19 +332,6 @@ class TextChunker(BaseChunker):
             remaining = remaining[cut:]
 
         return sources
-
-
-# File extensions that map to each chunker strategy
-_PYTHON_EXTENSIONS: frozenset[str] = frozenset({".py", ".pyw", ".pyx", ".pxd"})
-_TEXT_EXTENSIONS: frozenset[str] = frozenset(
-    {".md", ".markdown", ".rst", ".txt",
-     ".cfg", ".ini", ".toml", ".yaml", ".yml"}
-)
-# Source/config files worth indexing with the plain-text fallback
-_CODE_EXTENSIONS: frozenset[str] = frozenset(
-    {".c", ".h", ".cpp", ".cc", ".hpp", ".cu", ".cuh",
-     ".sh", ".bash", ".cmake", ".json"}
-)
 
 
 class PlainTextChunker(BaseChunker):
@@ -372,3 +387,100 @@ class ChunkerFactory:
             file_path,
         )
         return PlainTextChunker(max_chunk_size)
+
+
+class ChunkCollector:
+    """Walk a directory and collect chunk spans for every indexable file."""
+
+    def __init__(self, directory: str, max_chunk_size: int) -> None:
+        """Prepare an empty collection for *directory*.
+        Raise value errors if *directory* does not exist
+        """
+        validate_directory(directory)
+        self.directory: str = directory
+        self.max_chunk_size: int = validate_chunk_size(max_chunk_size)
+        self.chunks: List[MinimalSource] = []
+        self._text_cache: Dict[str, str] = {}
+
+    def add_chunk(self, chunk: MinimalSource) -> None:
+        """Append an already-built chunk to the collection."""
+        self.chunks.append(chunk)
+
+    def get_chunks(self) -> List[MinimalSource]:
+        """Return all collected chunks."""
+        return self.chunks
+
+    def _read_file(self, file_path: str) -> Optional[str]:
+        """Read *file_path* as UTF-8, caching its text.
+        """
+        if file_path in self._text_cache:
+            return self._text_cache[file_path]
+        try:
+            with open(file_path, "r", encoding="utf-8") as file:
+                text: str = file.read()
+        except (OSError, UnicodeDecodeError) as exc:
+            tqdm.write(
+                f"{_COLOR_RED}Skipping {file_path}: {exc}{_COLOR_RESET}"
+            )
+            return None
+        self._text_cache[file_path] = text
+        return text
+
+    def collect_chunks(self) -> None:
+        """Chunk every discoverable file and store the resulting spans."""
+        self.chunks = []
+        self._text_cache = {}
+        try:
+            for file_path in tqdm(
+                discovery(self.directory),
+                desc="Collecting chunks",
+                unit="file",
+                colour="cyan",
+            ):
+                text = self._read_file(file_path)
+                if text is None:
+                    continue
+                try:
+                    chunker: BaseChunker = ChunkerFactory.get_chunker(
+                        file_path, self.max_chunk_size
+                    )
+                    for chunk in chunker.chunk(file_path, text):
+                        self.add_chunk(chunk)
+                except Exception as exc:  # one bad file must not kill the run
+                    tqdm.write(
+                        f"{_COLOR_RED}Error chunking {file_path}: "
+                        f"{exc}{_COLOR_RESET}"
+                    )
+        except KeyboardInterrupt:
+            self.chunks = []
+            self._text_cache = {}
+            logger.info("Chunk collection cancelled.")
+            raise
+
+    def fetch_chunk_text(self, chunk: MinimalSource) -> str:
+        """Return the text covered by *chunk*, from cache when possible."""
+        cached = self._text_cache.get(chunk.file_path)
+        if cached is not None:
+            return cached[
+                chunk.first_character_index:chunk.last_character_index
+            ]
+        try:
+            return chunk.get_source_text()
+        except Exception as exc:
+            tqdm.write(
+                f"{_COLOR_RED}Error fetching text for {chunk.file_path}: "
+                f"{exc}{_COLOR_RESET}"
+            )
+            return ""
+
+    def fetch_all(self) -> List[str]:
+        """Return the text of every chunk, in collection order."""
+        return [
+            self.fetch_chunk_text(chunk)
+            for chunk in tqdm(
+                self.chunks,
+                desc="Fetching chunk texts",
+                unit="chunk",
+                colour="green",
+            )
+        ]
