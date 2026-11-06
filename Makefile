@@ -4,13 +4,13 @@
 
 # Environment variables for caching and virtual environment.
 ifdef CACHE_DIR
-	export UV_CACHE_DIR=$(CACHE_DIR)/uv_cache
-	export UV_PROJECT_ENVIRONMENT=$(CACHE_DIR)/venv
-	export HF_HOME=$(CACHE_DIR)/hf_cache
+export UV_CACHE_DIR=$(CACHE_DIR)/uv_cache
+export UV_PROJECT_ENVIRONMENT=$(CACHE_DIR)/venv
+export HF_HOME=$(CACHE_DIR)/hf_cache
 else
-	export UV_CACHE_DIR = /goinfre/$(USER)/RAG_cache
-	export UV_PROJECT_ENVIRONMENT = /goinfre/$(USER)/RAG_venv
-	export HF_HOME = /goinfre/$(USER)/hf_cache
+export UV_CACHE_DIR=/goinfre/$(USER)/RAG_cache
+export UV_PROJECT_ENVIRONMENT=/goinfre/$(USER)/RAG_venv
+export HF_HOME=/goinfre/$(USER)/hf_cache
 endif
 unexport VIRTUAL_ENV
 
