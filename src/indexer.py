@@ -81,7 +81,7 @@ class Indexer:
         k = _validate_k(k)
         if k == 0:
             return []
-        if not isinstance(query, str) or not query.strip():
+        if not query.strip():
             logger.warning("Empty query — returning no results.")
             return []
         if not self._is_indexed:

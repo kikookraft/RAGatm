@@ -23,11 +23,11 @@ _TEXT_EXTENSIONS: frozenset[str] = frozenset(
     {".md", ".markdown", ".rst", ".txt",
      ".cfg", ".ini", ".toml", ".yaml", ".yml"}
 )
-# Source/config files worth indexing with the plain-text fallback
-_CODE_EXTENSIONS: frozenset[str] = frozenset(
-    {".c", ".h", ".cpp", ".cc", ".hpp", ".cu", ".cuh",
-     ".sh", ".bash", ".cmake", ".json"}
-)
+# # Source/config files worth indexing with the plain-text fallback
+# _CODE_EXTENSIONS: frozenset[str] = frozenset(
+#     {".c", ".h", ".cpp", ".cc", ".hpp", ".cu", ".cuh",
+#      ".sh", ".bash", ".cmake", ".json"}
+# )
 
 
 def validate_directory(directory: str) -> None:

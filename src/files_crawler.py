@@ -14,10 +14,10 @@ _TEXT_EXTENSIONS: frozenset[str] = frozenset(
     {".md", ".markdown", ".rst", ".txt",
      ".cfg", ".ini", ".toml", ".yaml", ".yml"}
 )
-_CODE_EXTENSIONS: frozenset[str] = frozenset(
-    {".c", ".h", ".cpp", ".cc", ".hpp", ".cu", ".cuh",
-     ".sh", ".bash", ".cmake", ".json"}
-)
+# _CODE_EXTENSIONS: frozenset[str] = frozenset(
+#     {".c", ".h", ".cpp", ".cc", ".hpp", ".cu", ".cuh",
+#      ".sh", ".bash", ".cmake", ".json"}
+# )
 
 _INDEXABLE_EXTENSIONS = _PYTHON_EXTENSIONS.union(_TEXT_EXTENSIONS)  # .union(
 # _CODE_EXTENSIONS)

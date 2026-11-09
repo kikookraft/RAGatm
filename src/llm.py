@@ -40,14 +40,6 @@ class LocalRAGModel:
         load_timeout: float | None = None,
     ) -> None:
         """Initialize the local tokenizer and model.
-
-        Args:
-            model_name: Hugging Face model identifier to load.
-            max_new_tokens: Maximum number of output tokens to generate.
-            load_timeout: Maximum time allowed for the model to initialize.
-                When unset, the value is read from the
-                ``RAGATM_MODEL_TIMEOUT`` environment variable and defaults to 60
-                seconds.
         """
         self.model_name = model_name
         self.max_new_tokens = max_new_tokens
@@ -65,18 +57,18 @@ class LocalRAGModel:
 
     def _load_model(self) -> None:
         """Load the tokenizer and model with visible progress feedback."""
-        logger.info(
+        logger.debug(
             "Preparing to download/load %s from "
             "Hugging Face. This can take a while.",
             self.model_name,
         )
-        logger.info("Loading tokenizer for %s", self.model_name)
+        logger.debug("Loading tokenizer for %s", self.model_name)
         with tqdm(total=1, desc="Tokenizer", unit="step", leave=False) as pbar:
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
             pbar.update(1)
         logger.info("Tokenizer ready.")
 
-        logger.info("Loading model %s", self.model_name)
+        logger.debug("Loading model %s", self.model_name)
         with tqdm(total=1, desc="Model", unit="step", leave=False) as pbar:
             self.model = AutoModelForCausalLM.from_pretrained(self.model_name)
             self.model.to(self.device)
@@ -319,21 +311,3 @@ class LocalRAGModel:
             logger.info("Question %d/%d", index, len(questions))
             results.append(self.answer(question, sources))
         return results
-
-
-llm = LocalRAGModel()
-
-
-if __name__ == "__main__":
-    example_question = "How do I configure the OpenAI-compatible server?"
-    example_sources = [
-        (
-            "The OpenAI compatible server supports a --host option "
-            "and a --port option."
-        ),
-        (
-            "Use the API server entry point to expose "
-            "OpenAI-compatible endpoints."
-        ),
-    ]
-    print(llm.answer(example_question, example_sources))
