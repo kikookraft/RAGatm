@@ -11,7 +11,9 @@
 #   ./test_battery.sh c   # benchmarks only
 #   ./test_battery.sh d   # evaluate only (moulinette + your own)
 #   ./test_battery.sh     # all
-
+export UV_CACHE_DIR=/goinfre/tobesson/RAG_cache
+export UV_PROJECT_ENVIRONMENT=/goinfre/tobesson/RAG_venv
+export HF_HOME=/goinfre/tobesson/hf_cache
 set -u
 RUN=(uv run python3 -m src)
 TMP_DIR="/tmp/rag_test_battery"
