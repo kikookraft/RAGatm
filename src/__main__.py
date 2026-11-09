@@ -135,6 +135,25 @@ def evaluate_student_search_results(
             "per_question": {},
         }
 
+    if not dataset_payload.rag_questions:
+        return {
+            "valid": False,
+            "error": "dataset must contain at least one question",
+            "dataset_metrics": {},
+            "per_question": {},
+        }
+    if any(not isinstance(question, AnsweredQuestion)
+           for question in dataset_payload.rag_questions):
+        return {
+            "valid": False,
+            "error": (
+                "dataset must be an answered dataset with source spans; "
+                "received an UnansweredQuestions dataset instead"
+            ),
+            "dataset_metrics": {},
+            "per_question": {},
+        }
+
     metric_levels = (1, 3, 5, 10)
     per_question: dict[str, dict[str, float]] = {}
     question_scores: dict[str, list[float]] = {

@@ -24,9 +24,9 @@ SEARCH_OUT_DOCS ?= data/output/search_results/UnansweredQuestions
 SEARCH_OUT_CODE ?= data/output/search_results/UnansweredQuestions
 SEARCH_RESULT_DOCS_FILE ?= $(SEARCH_OUT_DOCS)/$(notdir $(DATASET_DOCS))
 SEARCH_RESULT_CODE_FILE ?= $(SEARCH_OUT_CODE)/$(notdir $(DATASET_CODE))
-EVAL_DATASET_PATH ?= $(DATASET_DOCS)
+EVAL_DATASET_PATH ?= $(GROUND_TRUTH_DOCS)
 EVAL_SEARCH_RESULTS_DIR ?= $(SEARCH_OUT_DOCS)
-EVAL_SEARCH_RESULTS_PATH ?= $(EVAL_SEARCH_RESULTS_DIR)/$(notdir $(EVAL_DATASET_PATH))
+EVAL_SEARCH_RESULTS_PATH ?= $(EVAL_SEARCH_RESULTS_DIR)/$(notdir $(DATASET_DOCS))
 EVAL_K ?= 10
 MOULI_BIN ?= $(firstword $(wildcard moulinette-ubuntu))
 
@@ -39,8 +39,8 @@ MOULI_BIN ?= $(firstword $(wildcard moulinette-ubuntu))
 #   make answer ARGS="'how to load a LoRA adapter' --k 10"
 #   make answer_dataset ARGS="--student_search_results_path data/output/search_results/UnansweredQuestions/dataset_docs_public.json --save_directory data/output/search_results_and_answer"
 #   make evaluate
-#   make evaluate EVAL_DATASET_PATH=data/datasets/UnansweredQuestions/dataset_docs_public.json EVAL_SEARCH_RESULTS_DIR=data/output/search_results/UnansweredQuestions EVAL_K=10
-#   make evaluate ARGS="data/output/search_results/UnansweredQuestions/dataset_docs_public.json data/datasets/UnansweredQuestions/dataset_docs_public.json --k 10"
+#   make evaluate EVAL_DATASET_PATH=data/datasets/AnsweredQuestions/dataset_docs_public.json EVAL_SEARCH_RESULTS_DIR=data/output/search_results/UnansweredQuestions EVAL_K=10
+#   make evaluate ARGS="data/output/search_results/UnansweredQuestions/dataset_docs_public.json data/datasets/AnsweredQuestions/dataset_docs_public.json --k 10"
 #   make recall-docs
 #   make recall-code
 #   make subject-check
@@ -116,7 +116,7 @@ help:
 	@echo "  make search ARGS='\"how to load a LoRA adapter\" --k 10'"
 	@echo "  make search_dataset ARGS='--dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json --k 10 --save_directory data/output/search_results/UnansweredQuestions'"
 	@echo "  make evaluate"
-	@echo "  make evaluate ARGS='data/output/search_results/UnansweredQuestions/dataset_docs_public.json data/datasets/UnansweredQuestions/dataset_docs_public.json --k 10'"
+	@echo "  make evaluate ARGS='data/output/search_results/UnansweredQuestions/dataset_docs_public.json data/datasets/AnsweredQuestions/dataset_docs_public.json --k 10'"
 	@echo "  make recall-docs"
 	@echo "  make recall-code"
 	@echo "  make validate"
