@@ -8,3 +8,4 @@ moulinette
 data/output/*
 test/*
 .mypy_cache/
+subject.txt
