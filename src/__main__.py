@@ -81,6 +81,12 @@ def _source_matches_reference(
     )
 
 
+def _validate_string(string: str, name: str) -> None:
+    """Raise ValueError if str is not a non-empty string."""
+    if not string.strip():
+        raise ValueError(f"{name} must be a non-empty string.")
+
+
 def _compute_recall_for_question(
     candidate_sources: list[MinimalSource],
     reference_sources: list[MinimalSource],
@@ -263,9 +269,7 @@ class CLI:
 
     def search(self, query: str, k: int = 5) -> Any:
         try:
-            if type(query) is not str:
-                logging.error("query must be a string.")
-                return
+            _validate_string(query, "query")
             if type(k) is not int or k <= 0:
                 logging.error("k must be a positive integer.")
                 return
@@ -293,12 +297,15 @@ class CLI:
     ) -> None:
         """Search every question in a dataset and write a JSON result file."""
         try:
-            if not isinstance(dataset_path, str) or (
-                    not dataset_path.strip()):
-                raise ValueError("dataset_path must be a non-empty string")
+            _validate_string(dataset_path, "dataset_path")
             if not os.path.isfile(dataset_path):
                 raise FileNotFoundError(
                     f"dataset file not found: {dataset_path}")
+            try:
+                _validate_string(save_directory, "save_directory")
+            except ValueError as e:
+                logging.error("Invalid save directory: %s", e)
+                return None
             if not isinstance(k, int) or k <= 0:
                 raise ValueError("k must be a positive integer")
 
@@ -348,8 +355,10 @@ class CLI:
 
     def answer(self, query: str, k: int = 10) -> Any:
         """Answer a single query using the top-k retrieved passages."""
-        if not isinstance(query, str) or not query.strip():
-            logging.error("query must be a non-empty string.")
+        try:
+            _validate_string(query, "query")
+        except ValueError as e:
+            logging.error("Invalid query: %s", e)
             return None
         if not isinstance(k, int) or k <= 0:
             logging.error("k must be a positive integer.")
@@ -395,14 +404,10 @@ class CLI:
         """Generate answers for every result in a
         StudentSearchResults JSON file."""
         try:
-            if not isinstance(student_search_results_path, str
-                              ) or not student_search_results_path.strip():
-                raise ValueError(
-                    "student_search_results_path must be a non-empty string")
-            if not isinstance(save_directory, str) or not (
-                    save_directory.strip()):
-                raise ValueError(
-                    "save_directory must be a non-empty string")
+            _validate_string(student_search_results_path,
+                             "student_search_results_path")
+            _validate_string(save_directory,
+                             "save_directory")
             if not os.path.isfile(student_search_results_path):
                 raise FileNotFoundError(
                     "search results file not "
@@ -469,18 +474,14 @@ class CLI:
     ) -> dict[str, Any] | None:
         """Validate search results and print recall metrics for a dataset."""
         try:
-            if not isinstance(student_search_results_path, str) or (
-                    not student_search_results_path.strip()):
-                raise ValueError(
-                    "student_search_results_path must be a non-empty string"
-                )
+            _validate_string(student_search_results_path,
+                             "student_search_results_path")
+            _validate_string(dataset_path, "dataset_path")
             if not os.path.isfile(student_search_results_path):
                 raise FileNotFoundError(
                     f"student search results file not found: "
                     f"{student_search_results_path}"
                 )
-            if not isinstance(dataset_path, str) or not dataset_path.strip():
-                raise ValueError("dataset_path must be a non-empty string")
             if not os.path.isfile(dataset_path):
                 raise FileNotFoundError(
                     f"dataset file not found: {dataset_path}")
