@@ -251,7 +251,7 @@ class LocalRAGModel:
             if self.model is None:
                 raise RuntimeError("Model is not initialized.")
 
-            logger.info("Encoding prompt (%d chars)", len(prompt))
+            logger.debug("Encoding prompt (%d chars)", len(prompt))
             inputs = self._build_inputs(prompt)
             if hasattr(inputs, "to"):
                 inputs = inputs.to(self.device)
@@ -260,7 +260,7 @@ class LocalRAGModel:
                     key: value.to(self.device) for key, value in inputs.items()
                 }
 
-            logger.info(
+            logger.debug(
                 "Generating answer with max_new_tokens=%d",
                 self.max_new_tokens,
             )
@@ -280,7 +280,7 @@ class LocalRAGModel:
             )
             answer = self._strip_answer_prefix(answer)
 
-            logger.info("Answer generated successfully.")
+            logger.debug("Answer generated successfully.")
             return answer
         except Exception as exc:
             logger.warning("Generation failed: %s", exc)

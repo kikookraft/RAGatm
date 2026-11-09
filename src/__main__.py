@@ -13,6 +13,7 @@ from typing import Any
 
 import fire
 from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 from src.indexer import Indexer
 from src.logging_config import configure_logging
@@ -379,6 +380,10 @@ class CLI:
                               ) or not student_search_results_path.strip():
                 raise ValueError(
                     "student_search_results_path must be a non-empty string")
+            if not isinstance(save_directory, str) or not (
+                    save_directory.strip()):
+                raise ValueError(
+                    "save_directory must be a non-empty string")
             if not os.path.isfile(student_search_results_path):
                 raise FileNotFoundError(
                     "search results file not "
@@ -389,34 +394,37 @@ class CLI:
                 payload = StudentSearchResults.model_validate(json.load(handle))
 
             answers: list[MinimalAnswer] = []
-            for result in tqdm(
-                payload.search_results,
-                desc="Generating answers",
-                unit="q",
-                file=sys.stderr,
-                dynamic_ncols=True,
-                miniters=1,
-                leave=True,
-            ):
-                source_texts: list[str] = []
-                for source in result.retrieved_sources:
-                    try:
-                        source_text = source.get_source_text()
-                        source_texts.append(
-                            _format_source_context(source, source_text)
-                        )
-                    except Exception as exc:
-                        logging.warning("Skipping invalid source %s: %s",
-                                        source.file_path, exc)
-                answer_text = _get_llm().answer(result.question, source_texts)
-                answers.append(
-                    MinimalAnswer(
-                        question_id=result.question_id,
-                        question=result.question,
-                        retrieved_sources=result.retrieved_sources,
-                        answer=answer_text,
+            with logging_redirect_tqdm():
+                for result in tqdm(
+                    payload.search_results,
+                    desc="Generating answers",
+                    unit="q",
+                    file=sys.stderr,
+                    dynamic_ncols=True,
+                    miniters=1,
+                    leave=True,
+                ):
+                    source_texts: list[str] = []
+                    for source in result.retrieved_sources:
+                        try:
+                            source_text = source.get_source_text()
+                            source_texts.append(
+                                _format_source_context(source, source_text)
+                            )
+                        except Exception as exc:
+                            logging.warning("Skipping invalid source %s: %s",
+                                            source.file_path, exc)
+                    answer_text = _get_llm().answer(
+                        result.question, source_texts
                     )
-                )
+                    answers.append(
+                        MinimalAnswer(
+                            question_id=result.question_id,
+                            question=result.question,
+                            retrieved_sources=result.retrieved_sources,
+                            answer=answer_text,
+                        )
+                    )
 
             output_payload = StudentSearchResultsAndAnswer(
                 search_results=answers, k=payload.k)
