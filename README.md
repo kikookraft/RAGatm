@@ -2,374 +2,206 @@
 
 # RAG against the machine
 
-This project builds a Retrieval-Augmented Generation (RAG) pipeline for a large codebase. The goal is to index a repository, find the most relevant source snippets for a natural-language question, feed those snippets to a local language model, and generate an answer grounded in the retrieved evidence.
+## Description
 
-The project follows the instructions described in the subject: ingest the vLLM repository, chunk files appropriately, build a searchable index, retrieve top-k candidates, then produce a JSON-based answer flow with source spans and evaluation metrics.
+This project implements a Retrieval-Augmented Generation (RAG) pipeline for a large codebase. The goal is to index a repository, retrieve the most relevant source snippets for a natural-language question, and feed those snippets to a local language model so that the final answer remains grounded in the codebase rather than in model memory.
 
----
+The system is built around the vLLM repository provided in the project data. It ingests raw source files, splits them into chunks, builds a searchable lexical index, retrieves the best candidates for a question, and finally produces a structured answer with supporting source spans. The solution follows the project subject requirements and is designed to work from the CLI with `uv`.
 
-## 1. Project goal
+## Instructions
 
-A language model is frozen in time: it only knows what it saw during training. That is a problem when the question concerns a private repository, a recent library change, or a project-specific API. Instead of trying to insert all knowledge into the model, RAG keeps the model small and gives it access to the right evidence at query time.
+### Prerequisites
 
-In practice, the pipeline has four stages:
+- Python 3.10+
+- `uv` installed and available on your PATH
+- A local environment with enough disk space for the repository and model downloads
 
-1. Indexing
-   - Discover relevant files in a corpus.
-   - Split them into manageable chunks.
-   - Store the chunks in a retrievable index.
+### Installation
 
-2. Retrieval
-   - Tokenize the user query.
-   - Search the index with a lexical ranking method.
-   - Return the most relevant source locations.
+```bash
+uv sync
+```
 
-3. Augmentation
-   - Recover the actual text for each retrieved span.
-   - Inject the relevant evidence into the prompt given to the model.
+This installs the Python dependencies declared in the project configuration and prepares the environment for the CLI commands.
 
-4. Generation
-   - Ask a local model to answer the question using only the retrieved snippets.
-   - Return a grounded answer and the supporting source references.
+### Core commands
 
----
+```bash
+# Build the index on the raw corpus
+uv run python -m src index --max_chunk_size 2000
 
-## 2. Mandatory subject requirements reflected in the code
+# Search a single query
+uv run python -m src search "how to enable LoRA adapters" --k 5
 
-The repository is designed around the subject constraints:
+# Search a full dataset and save the result JSON
+uv run python -m src search_dataset \
+  --dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json \
+  --k 10 \
+  --save_directory data/output/search_results/UnansweredQuestions
 
-- Python 3.10+ project structure and proper CLI behavior.
-- Pydantic models for validation and safe exchange between stages.
-- At least one classical lexical retriever (BM25 is used here).
-- Two chunking strategies:
-  - Python chunking for Python files.
-  - Markdown/plain-text chunking for documentation and prose files.
-- Chunk size capped at 2000 characters as required by the subject.
-- Command-Line Interface based on Python Fire.
-- Progress bars via tqdm for long-running operations.
-- Local model integration using the default Qwen/Qwen3-0.6B model.
-- Retrieval evaluation through recall@k against dataset answers.
+# Answer a single query using the retrieved context
+uv run python -m src answer "how to enable LoRA adapters" --k 5
 
----
+# Generate answers for a whole dataset
+uv run python -m src answer_dataset \
+  --student_search_results_path data/output/search_results/UnansweredQuestions/dataset_docs_public.json \
+  --save_directory data/output/search_results_and_answer/UnansweredQuestions
 
-## 3. Detailed project workflow
+# Evaluate retrieval quality locally
+uv run python -m src evaluate \
+  --student_search_results_path data/output/search_results/UnansweredQuestions/dataset_docs_public.json \
+  --dataset_path data/datasets/AnsweredQuestions/dataset_docs_public.json
+```
 
-### 3.1 Corpus discovery
+### Makefile helpers
 
-The entry point is the project directory under data/raw. The crawler walks the directory tree recursively and keeps only file extensions that are considered indexable.
+```bash
+make install
+make index ARGS="--max_chunk_size 2000"
+make run
+make debug
+make lint
+make lint-strict
+make clean
+make index
+make search
+make search_dataset
+make answer
+make answer_dataset
+make evaluate
+make recall
+```
 
-This is implemented in src/files_crawler.py:
+The make targets are provided to simplify common tasks, but the graded interface remains the CLI executed via `uv run python -m src ...`.
 
-- discovery(root_dir) recursively scans the directory tree.
-- It accepts files with known text and Python extensions.
-- It returns a flat list of file paths to be chunked and indexed.
+## System architecture
 
-This step isolates the raw ingestion logic from the rest of the pipeline and makes the system easier to extend to other corpora.
-
-### 3.2 Chunking
-
-Each file is not indexed as a whole: it is split into smaller source spans. This is essential to respect the 2000-character cap and to improve retrieval precision.
-
-The logic lives in src/chunker.py and follows two main strategies:
-
-- Python files: PythonChunker
-  - Parses the file with Python’s AST.
-  - Identifies top-level nodes and splits on meaningful code structure.
-  - If a node is too large, it falls back to line-based splitting.
-
-- Markdown / text files: TextChunker
-  - Splits on paragraph boundaries, then punctuation, then whitespace.
-  - Keeps prose chunks natural and readable while staying under the limit.
-
-- Generic text fallback: PlainTextChunker
-  - Used for files without a dedicated strategy.
-  - Falls back to line-based segmentation.
-
-The chunker produces MinimalSource objects representing:
-
-- file_path
-- first_character_index
-- last_character_index
-
-A MinimalSource is always constrained to stay within the 2000-character rule enforced by the Pydantic model in src/models.py.
-
-### 3.3 Data model layer
-
-The project exchanges data between stages as validated structures. This is defined in src/models.py.
-
-Important models:
-
-- MinimalSource
-  - A file path and character span.
-  - Prevents invalid spans and enforces length constraints.
-
-- UnansweredQuestion
-  - A question_id and the question string.
-
-- AnsweredQuestion
-  - Includes the question, its answer, and the supporting sources.
-
-- RagDataset
-  - A dataset containing a list of answered or unanswered questions.
-
-- MinimalSearchResults
-  - A question with the list of retrieved sources.
-
-- StudentSearchResults / StudentSearchResultsAndAnswer
-  - External JSON payloads used by CLI commands and evaluation.
-
-This model layer ensures that data is validated before it travels between the retrieval, answer-generation, and evaluation stages.
-
-### 3.4 Index construction
-
-The indexing logic is in src/indexer.py.
-
-The Indexer class coordinates the full retrieval backend:
-
-- validate_directory(directory)
-  - checks the corpus folder exists.
-
-- ChunkCollector.collect_chunks()
-  - discovers files and stores all generated source spans.
-
-- fetch_all()
-  - reads the text for each chunk and assembles the corpus.
-
-- build_index()
-  - tokenizes the chunk texts with BM25S and Stemmer.
-  - creates the BM25 index.
-
-- save()
-  - writes the BM25 model and the chunk metadata to data/processed.
-
-- load()
-  - reloads the saved index and chunk list for later searches.
-
-The BM25 retriever is the core lexical ranking method. Each chunk becomes a document. The query is tokenized in the same way, and the most relevant chunks are returned by score.
-
-### 3.5 Retrieval stage
-
-Once the corpus is indexed, a question is sent to the retriever.
-
-The search flow is:
-
-1. validate query and k
-2. load the existing index from disk
-3. tokenize the question
-4. ask BM25 for the top-k chunks
-5. return a list of (MinimalSource, score)
-
-This is the key operation that decides which evidence is passed to the model. Good retrieval is the difference between a correct grounded answer and a hallucinated one.
-
-The CLI exposes:
-
-- index: build the corpus index
-- search: query a single question
-- search_dataset: run retrieval over a whole dataset and save a JSON result file
-
-### 3.6 Answer generation
-
-The local model wrapper is defined in src/llm.py.
-
-The main class is LocalRAGModel.
-
-It performs three important jobs:
-
-- build_prompt(question, sources)
-  - keeps only the most relevant sentences from the retrieved sources
-  - assembles a compact evidence-based prompt
-
-- generate(prompt)
-  - loads the model with AutoTokenizer and AutoModelForCausalLM
-  - runs generation with the selected Qwen model
-
-- answer(question, sources)
-  - produces the final answer using the retrieved context
-  - falls back to a grounded extraction when model initialization fails
-
-The generation prompt explicitly tells the model to answer only from the supplied evidence. This is crucial for a grounded pipeline and helps reduce hallucination.
-
-### 3.7 Evaluation
-
-The project also implements retrieval evaluation in src/__main__.py.
-
-The evaluator compares student search results against an answered dataset and computes recall@k. This is important for the subject requirement that the retriever reaches a threshold such as:
-
-- recall@5 on documentation questions
-- recall@5 on code questions
-
-The metric logic compares candidate source spans to ground-truth sources and checks whether they overlap sufficiently.
-
-This is the stage that tells whether the retrieval engine is useful enough for the full RAG flow.
-
----
-
-## 4. How the modules interact with each other
-
-The project is intentionally split into small modules, each with a clear responsibility:
+The project is intentionally split into small modules, each with a distinct responsibility:
 
 ```mermaid
 graph TD
-    A[User query / dataset input] --> B[src/__main__.py]
+    A[Question or dataset input] --> B[src/__main__.py]
     B --> C[src/files_crawler.py]
     B --> D[src/chunker.py]
     D --> E[src/models.py]
     D --> F[src/indexer.py]
     F --> G[data/processed]
     B --> H[src/llm.py]
-    F --> I[retrieved source spans]
+    F --> I[Retrieved source spans]
     I --> H
-    H --> J[grounded answer]
-    B --> K[evaluation logic]
+    H --> J[Grounded answer]
+    B --> K[Evaluation logic]
 ```
 
-### Module by module
+The pipeline follows these stages:
 
-- src/__main__.py
-  - Fire CLI entry point.
-  - Wires the whole pipeline together.
-  - Exposes commands such as index, search, answer, and evaluate.
+1. Discovery: the crawler enumerates relevant corpus files from `data/raw/`.
+2. Chunking: files are segmented into small, searchable units respecting the max context limit.
+3. Indexing: chunks are stored in a lexical search index for fast similarity search.
+4. Retrieval: the system ranks candidate chunks against a user query.
+5. Generation: the highest-scoring evidence is inserted into the prompt sent to the local model.
+6. Evaluation: retrieved sources are compared against reference answers using recall@k.
 
-- src/files_crawler.py
-  - Discovers candidate files in the target corpus.
-  - Sends them to the chunker.
+## Chunking strategy
 
-- src/chunker.py
-  - Splits source files into valid spans.
-  - Produces MinimalSource objects used by the indexer.
+The project implements two distinct chunking strategies, as required by the subject:
 
-- src/models.py
-  - Validates all exchanges: questions, source spans, retrieval results, answers.
+- Python chunking: for code files, the chunker uses structured parsing to keep logical blocks together, such as classes, functions, and top-level definitions. If a block is too large, it falls back to a safer line-based split.
+- Markdown/text chunking: for documentation pages, the chunker splits on section and paragraph boundaries so that semantic context is preserved while keeping chunks under the 2000-character cap.
 
-- src/indexer.py
-  - Builds and loads the BM25 index.
-  - Retrieves the top-k relevant chunks for a query.
+The chunker always stores source metadata as a `MinimalSource`, including:
 
-- src/llm.py
-  - Converts evidence into prompt text.
-  - Loads the local Qwen model and answers the question.
+- `file_path`
+- `first_character_index`
+- `last_character_index`
 
-The design is modular on purpose: every stage is independent, but the pipeline only works correctly when they agree on the same data contract.
+This guarantees that retrieved spans remain valid and compatible with the evaluation format.
 
----
+## Retrieval method
 
-## 5. Typical execution flow
+The retrieval layer uses a classic lexical method: BM25.
 
-A complete use case looks like this:
+This choice is a good fit for code and documentation because the same concepts often appear in both the query and the source text, and lexical ranking is fast, transparent, and easy to validate. The retriever:
 
-1. Run the index command.
-   - The system walks the repository.
-   - Files are split into chunks.
-   - The BM25 index is trained and saved.
+- loads the saved index from `data/processed/`
+- tokenizes the query and the indexed chunks consistently
+- scores the chunks with BM25
+- returns the top-k results in ranked order
 
-2. Ask a question.
-   - Example: "How do I load a LoRA adapter in vLLM?"
-   - The search layer tokenizes the query and retrieves the top-k relevant chunks.
+Ranking quality is critical because the retrieved snippets are the only evidence the language model sees. If retrieval misses the right file or span, the final answer loses grounding.
 
-3. Extract source text.
-   - The system reads the exact file slices for each retrieved source.
+## Performance analysis
 
-4. Build the prompt.
-   - The model sees the relevant evidence and nothing else.
+The project aims to respect the subject constraints:
 
-5. Generate the answer.
-   - The model responds based on the retrieved context.
+- indexing is performed under 20 seconds
+- retrieval is performed under 5 seconds
+- answer generation is performed under 5 seconds (on lenovo)
 
-6. Evaluate the retrieval.
-   - If the project is compared with a reference dataset, Recall@k is measured against source span overlaps.
+Recall@5: 
+- 0.576 on code
+- 0.850 on docs
 
----
+## Design decisions
 
-## 6. Folder structure
+Several design choices are central to the project:
 
-- src/
-  - Core pipeline implementation.
-- data/
-  - raw corpus, processed index, datasets, and output JSON.
-- Makefile
-  - Common tasks: install, index, run, search, evaluate.
-- pyproject.toml
-  - project metadata and dependencies.
+- Use of pydantic models to validate all exchanges between indexing, retrieval, and answer generation.
+- Clean separation between file discovery, chunking, indexing, retrieval, and answering.
+- Strict source-span tracking to keep each result tied to the exact file and character range.
+- CLI-first execution so the project remains compatible with automated graders and manual testing.
+- Support for both single-query and dataset-level flows, which is required by the RAG workflow and by the evaluation scripts.
 
----
+## Challenges faced
 
-## 7. Useful commands
+The main difficulties were:
 
-### Install dependencies
+- not overcomplicate the project structure
+- find motivation to continue the project after 2 month of inactivity
+- optimize generation to not make the mac explode again (now it just became unusable but does not crash)
+- keep the input and output formats clean and compatible with the evaluation scripts
+
+## Resources
+
+### References
+
+- The subject requirements and evaluation criteria.
+- Transform module.
+- BM25 and lexical retrieval documentation.
+- Call Me maybe for the model loading and tokenisaqtion.
+
+### AI usage
+
+AI tools was used for:
+
+- drafting the initial README structure
+- saying the text I wrote in the readme was irrelevant
+- clearing up the logging system
+- writing the docstring
+- 
+
+The implementation remains controlled by the author and every design choice was reviewed against the project specification rather than blindly copied from generated output.
+
+## Example usage
 
 ```bash
-make install
-```
+# 1) Install dependencies
+uv sync
 
-### Build the index
-
-```bash
+# 2) Index the repository
 uv run python -m src index --max_chunk_size 2000
-```
 
-### Search one question
+# 3) Search a single question
+uv run python -m src search "How do I configure the OpenAI-compatible server?" --k 5
 
-```bash
-uv run python -m src search "how to load a LoRA adapter" --k 5
-```
-
-### Search an entire dataset
-
-```bash
+# 4) Search the public docs dataset
 uv run python -m src search_dataset \
   --dataset_path data/datasets/UnansweredQuestions/dataset_docs_public.json \
   --k 10 \
   --save_directory data/output/search_results/UnansweredQuestions
-```
 
-### Answer one question
-
-```bash
-uv run python -m src answer "how to load a LoRA adapter" --k 10
-```
-
-### Produce answers for a whole dataset
-
-```bash
+# 5) Generate answers from the search results
 uv run python -m src answer_dataset \
   --student_search_results_path data/output/search_results/UnansweredQuestions/dataset_docs_public.json \
-  --save_directory data/output/search_results_and_answer
+  --save_directory data/output/search_results_and_answer/UnansweredQuestions
 ```
-
-### Evaluate results against a reference dataset
-
-```bash
-uv run python -m src evaluate \
-  data/output/search_results/UnansweredQuestions/dataset_docs_public.json \
-  data/datasets/AnsweredQuestions/dataset_docs_public.json \
-  --k 10
-```
-
----
-
-## 8. Why this design is suited to the project
-
-This implementation intentionally uses a classic retriever and a grounded generation loop because it matches the subject exactly:
-
-- lexical retrieval is fast and explainable;
-- chunking keeps evidence narrow and relevant;
-- local model generation is lightweight and easier to run without external services;
-- source-span validation keeps outputs aligned with the grading rules;
-- the pipeline is easy to reason about and debug.
-
-The whole system is a textbook RAG architecture: index, retrieve, augment, answer, and evaluate.
-
----
-
-## 9. Summary
-
-The project turns a large codebase into a queryable evidence store, then answers questions by grounding the model in retrieved code or documentation snippets. The pipeline is centered around:
-
-- file discovery,
-- file-type-aware chunking,
-- BM25 indexing,
-- top-k source retrieval,
-- prompt-based answer generation,
-- evaluation and metrics.
-
-This is the core of a real RAG system for code understanding, and it follows the subject’s required architecture and constraints.
