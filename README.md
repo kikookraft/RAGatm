@@ -12,9 +12,11 @@ The system is built around the vLLM repository provided in the project data. It 
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.13.x
 - `uv` installed and available on your PATH
 - A local environment with enough disk space for the repository and model downloads
+
+This project is pinned to Python 3.13 because the CUDA PyTorch wheel used here (`torch==2.5.1+cu121`) only ships for the CPython 3.13 ABI.
 
 ### Installation
 

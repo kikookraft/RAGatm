@@ -3,7 +3,7 @@ name = "ragatm"
 version = "0.1.0"
 description = "Retrieval Augmented Genertation"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "flake8>=7.3.0",
     "fire>=0.7.0",
