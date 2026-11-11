@@ -220,9 +220,9 @@ def _get_llm() -> Any:
     """Lazily import and cache the LLM wrapper.
     """
     logging.info("Initializing LLM module...")
-    from src.llm import llm as loaded_llm
+    from src.llm import LocalRAGModel
 
-    return loaded_llm
+    return LocalRAGModel()
 
 
 def _format_source_context(source: MinimalSource, text: str) -> str:
